@@ -283,12 +283,41 @@
         let tokenExpiry = null;
 
         // Configuration - Add your Client ID here
-        const CLIENT_ID = '584c1e79-568e-4d71-91ff-3e00bf01d04b'; 
+        const CLIENT_ID = '584c1e79-568e-4d71-91ff-3e00bf01d04b'; // REQUIRED: Add your Genesys Cloud OAuth Client ID
 
         // Initialize on page load
         window.onload = function() {
+            // Check if running from file:// protocol
+            if (window.location.protocol === 'file:') {
+                showStatus('⚠️ ERROR: This app cannot run from file://. Please host on a web server (http:// or https://). See instructions below.', 'error');
+                document.getElementById('querySection').innerHTML = `
+                    <h3 style="color: #d9534f; margin-bottom: 20px;">⚠️ Hosting Required</h3>
+                    <p style="margin-bottom: 15px;">This application must be served over HTTP/HTTPS. Here are your options:</p>
+                    
+                    <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 15px;">
+                        <h4 style="margin-bottom: 10px;">Option 1: Python Simple Server (Easiest)</h4>
+                        <p style="margin-bottom: 10px;">Open terminal/command prompt in the folder with this HTML file:</p>
+                        <code style="background: #fff; padding: 10px; display: block; border-radius: 4px; margin-bottom: 10px;">python -m http.server 8000</code>
+                        <p style="margin-bottom: 5px;">Then open: <strong>http://localhost:8000/genesys-parked-conversations.html</strong></p>
+                        <p style="font-size: 12px; color: #666;">Set Redirect URI in Genesys OAuth to: http://localhost:8000/genesys-parked-conversations.html</p>
+                    </div>
+                    
+                    <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 15px;">
+                        <h4 style="margin-bottom: 10px;">Option 2: Node.js http-server</h4>
+                        <code style="background: #fff; padding: 10px; display: block; border-radius: 4px; margin-bottom: 10px;">npx http-server -p 8000</code>
+                        <p>Then open: <strong>http://localhost:8000/genesys-parked-conversations.html</strong></p>
+                    </div>
+                    
+                    <div style="background: #f8f9fa; padding: 20px; border-radius: 8px;">
+                        <h4 style="margin-bottom: 10px;">Option 3: Upload to Web Server</h4>
+                        <p>Upload this HTML file to any web hosting service and access via https://yourdomain.com/...</p>
+                    </div>
+                `;
+                return;
+            }
+            
             if (!CLIENT_ID) {
-                showStatus('❌ Error: CLIENT_ID not configured. Please add your Client ID to the code.', 'error');
+                showStatus('❌ Error: CLIENT_ID not configured. Please add your Client ID to the code (line 184).', 'error');
                 return;
             }
 
@@ -319,6 +348,13 @@
         async function initiateLogin() {
             const redirectUri = window.location.origin + window.location.pathname;
             
+            console.log('Initiating login with:', {
+                clientId: CLIENT_ID,
+                redirectUri: redirectUri,
+                region: REGION,
+                loginUrl: LOGIN_URL
+            });
+            
             // Generate PKCE code verifier and challenge
             const codeVerifier = generateCodeVerifier();
             const codeChallenge = await generateCodeChallenge(codeVerifier);
@@ -329,6 +365,12 @@
             // Store for later verification
             sessionStorage.setItem('pkce_code_verifier', codeVerifier);
             sessionStorage.setItem('oauth_state', state);
+            
+            console.log('PKCE generated:', {
+                codeVerifierLength: codeVerifier.length,
+                codeChallengeLength: codeChallenge.length,
+                stateLength: state.length
+            });
 
             // Build authorization URL for Authorization Code + PKCE
             const authUrl = `${LOGIN_URL}/oauth/authorize?` +
@@ -339,6 +381,8 @@
                 `code_challenge=${codeChallenge}&` +
                 `code_challenge_method=S256`;
 
+            console.log('Redirecting to:', authUrl);
+            
             // Redirect to Genesys Cloud login
             window.location.href = authUrl;
         }
@@ -346,17 +390,31 @@
         async function handleOAuthCallback(code) {
             const urlParams = new URLSearchParams(window.location.search);
             const state = urlParams.get('state');
+            const error = urlParams.get('error');
+            const errorDescription = urlParams.get('error_description');
+            
+            // Check for OAuth errors
+            if (error) {
+                showStatus(`❌ OAuth Error: ${error} - ${errorDescription || 'No description'}`, 'error');
+                console.error('OAuth Error:', { error, errorDescription });
+                sessionStorage.clear();
+                return;
+            }
             
             // Verify state to prevent CSRF
             const savedState = sessionStorage.getItem('oauth_state');
+            console.log('State verification:', { received: state, saved: savedState });
+            
             if (state !== savedState) {
                 showStatus('❌ Invalid state parameter. Possible CSRF attack.', 'error');
+                console.error('State mismatch:', { received: state, saved: savedState });
                 return;
             }
             
             const codeVerifier = sessionStorage.getItem('pkce_code_verifier');
             if (!codeVerifier) {
                 showStatus('❌ Missing code verifier. Please try logging in again.', 'error');
+                console.error('Code verifier not found in session storage');
                 initiateLogin();
                 return;
             }
@@ -364,27 +422,43 @@
             // Exchange authorization code for access token
             const redirectUri = window.location.origin + window.location.pathname;
             
+            console.log('Token exchange attempt:', {
+                clientId: CLIENT_ID,
+                redirectUri: redirectUri,
+                codeLength: code.length,
+                hasCodeVerifier: !!codeVerifier
+            });
+            
             try {
-                const response = await fetch(`${BASE_URL}/oauth/token`, {
+                const tokenUrl = `${BASE_URL}/oauth/token`;
+                const body = new URLSearchParams({
+                    grant_type: 'authorization_code',
+                    code: code,
+                    redirect_uri: redirectUri,
+                    client_id: CLIENT_ID,
+                    code_verifier: codeVerifier
+                });
+
+                console.log('Fetching token from:', tokenUrl);
+                
+                const response = await fetch(tokenUrl, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded'
                     },
-                    body: new URLSearchParams({
-                        grant_type: 'authorization_code',
-                        code: code,
-                        redirect_uri: redirectUri,
-                        client_id: CLIENT_ID,
-                        code_verifier: codeVerifier
-                    })
+                    body: body
                 });
+
+                console.log('Token response status:', response.status);
 
                 if (!response.ok) {
                     const errorData = await response.json();
-                    throw new Error(errorData.error_description || errorData.message || 'Token exchange failed');
+                    console.error('Token exchange error:', errorData);
+                    throw new Error(errorData.error_description || errorData.message || errorData.error || `Token exchange failed: ${response.status}`);
                 }
 
                 const data = await response.json();
+                console.log('Token received successfully');
                 
                 // Store token
                 accessToken = data.access_token;
@@ -404,9 +478,23 @@
                 showStatus('✅ Authentication successful!', 'success');
                 
             } catch (error) {
-                showStatus(`❌ Authentication failed: ${error.message}`, 'error');
+                console.error('Authentication error:', error);
+                let errorMessage = error.message;
+                
+                // Provide more helpful error messages
+                if (error.message === 'Failed to fetch' || error.name === 'TypeError') {
+                    errorMessage = 'Network error. Possible causes:\n' +
+                                 '1. CORS issue - Are you running from file:// ? Must use http:// or https://\n' +
+                                 '2. Client ID is incorrect\n' +
+                                 '3. Redirect URI in OAuth settings doesn\'t match current URL\n' +
+                                 '4. Network/firewall blocking the request';
+                }
+                
+                showStatus(`❌ Authentication failed: ${errorMessage}`, 'error');
                 sessionStorage.clear();
-                setTimeout(() => initiateLogin(), 3000);
+                
+                // Don't auto-retry on fetch failures
+                console.log('Check the console for detailed error information');
             }
         }
 
