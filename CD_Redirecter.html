@@ -242,14 +242,45 @@
         let tokenExpiry = null;
 
         // Configuration - Add your Client ID here
-        const CLIENT_ID = 'e1f0834d-492c-40ff-9446-85e5e521eff4'; // REQUIRED: Add your Genesys Cloud OAuth Client ID
+        const CLIENT_ID = 'e1f0834d-492c-40ff-9446-85e5e521eff4/'; // REQUIRED: Add your Genesys Cloud OAuth Client ID
 
         // Initialize on page load
         window.onload = function() {
+            // Show configuration info
+            const currentUrl = window.location.href;
+            const redirectUri = window.location.origin + window.location.pathname;
+            
+            console.log('=== CONFIGURATION INFO ===');
+            console.log('Current URL:', currentUrl);
+            console.log('Redirect URI being used:', redirectUri);
+            console.log('Client ID:', CLIENT_ID || 'NOT SET');
+            console.log('Region:', REGION);
+            console.log('========================');
+            
             if (!CLIENT_ID) {
                 showStatus('❌ Error: CLIENT_ID not configured. Please add your Client ID on line 242.', 'error');
+                document.getElementById('querySection').innerHTML = `
+                    <h3 style="color: #d9534f; margin-bottom: 15px;">⚠️ Configuration Required</h3>
+                    <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #ffc107;">
+                        <p style="margin-bottom: 10px;"><strong>Redirect URI to use in Genesys OAuth:</strong></p>
+                        <code style="background: #fff; padding: 10px; display: block; border-radius: 4px; word-break: break-all;">${redirectUri}</code>
+                    </div>
+                    <p>1. Add your Client ID on line 242 of this HTML file</p>
+                    <p>2. Configure the redirect URI above in your Genesys Cloud OAuth client</p>
+                `;
                 return;
             }
+
+            // Show redirect URI for user to verify
+            const infoDiv = document.createElement('div');
+            infoDiv.style.cssText = 'background: #d1ecf1; padding: 12px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #bee5eb; font-size: 13px;';
+            infoDiv.innerHTML = `
+                <strong>ℹ️ Configuration Info:</strong><br>
+                <strong>Redirect URI:</strong> <code style="background: #fff; padding: 2px 6px; border-radius: 3px;">${redirectUri}</code><br>
+                <strong>Client ID:</strong> <code style="background: #fff; padding: 2px 6px; border-radius: 3px;">${CLIENT_ID.substring(0, 20)}...</code><br>
+                <small>Make sure this EXACT redirect URI is in your Genesys OAuth client settings</small>
+            `;
+            document.getElementById('querySection').insertBefore(infoDiv, document.getElementById('querySection').firstChild);
 
             // Check if we're returning from OAuth redirect (token in URL fragment)
             handleOAuthCallback();
@@ -454,8 +485,34 @@
 
                 const data = await response.json();
                 console.log('✓ Query successful:', data.conversations?.length || 0, 'conversations');
+                
+                // Debug: Log segment details for troubleshooting
+                let totalSegments = 0;
+                let activeSegments = 0;
+                data.conversations?.forEach(conv => {
+                    conv.participants?.forEach(p => {
+                        p.sessions?.forEach(s => {
+                            s.segments?.forEach(seg => {
+                                totalSegments++;
+                                if (seg.queueId && s.mediaType === 'email' && seg.segmentStart && !seg.segmentEnd) {
+                                    activeSegments++;
+                                    console.log('Active parked segment:', {
+                                        conversationId: conv.conversationId,
+                                        queueId: seg.queueId,
+                                        segmentStart: seg.segmentStart,
+                                        segmentEnd: seg.segmentEnd,
+                                        disconnectType: seg.disconnectType
+                                    });
+                                }
+                            });
+                        });
+                    });
+                });
+                console.log('Total segments found:', totalSegments);
+                console.log('Currently active parked segments:', activeSegments);
+                
                 displayResults(data.conversations || []);
-                showStatus(`✅ Found ${data.conversations?.length || 0} parked email conversations`, 'success');
+                showStatus(`✅ Found ${activeSegments} currently parked email conversations`, 'success');
 
             } catch (error) {
                 console.error('Query error:', error);
@@ -486,25 +543,45 @@
                 return;
             }
 
-            // Extract parked email conversation data
+            // Extract CURRENTLY parked email conversation data
             const parkedEmails = [];
             const uniqueQueues = new Set();
             const uniqueUsers = new Set();
+            const conversationMap = new Map(); // Track unique conversations to avoid duplicates
 
             conversations.forEach(conv => {
                 conv.participants?.forEach(participant => {
                     participant.sessions?.forEach(session => {
                         session.segments?.forEach(segment => {
-                            // Filter for email media type and queued segments
-                            if (segment.queueId && session.mediaType === 'email') {
-                                parkedEmails.push({
-                                    conversationId: conv.conversationId,
-                                    userId: participant.userId || 'N/A',
-                                    queueId: segment.queueId
-                                });
+                            // Filter for CURRENTLY parked emails:
+                            // 1. Must be email media type
+                            // 2. Must have a queueId (in a queue)
+                            // 3. Must have segmentStart (segment has started)
+                            // 4. Must NOT have segmentEnd (segment still active/parked)
+                            // 5. Should not have disconnectType === 'transfer' (was transferred out)
+                            if (segment.queueId && 
+                                session.mediaType === 'email' && 
+                                segment.segmentStart && 
+                                !segment.segmentEnd &&
+                                segment.disconnectType !== 'transfer') {
                                 
-                                uniqueQueues.add(segment.queueId);
-                                if (participant.userId) uniqueUsers.add(participant.userId);
+                                // Use conversation ID as key to avoid duplicates
+                                const key = conv.conversationId;
+                                
+                                // Only add if we haven't seen this conversation yet, or update with latest info
+                                if (!conversationMap.has(key)) {
+                                    const emailData = {
+                                        conversationId: conv.conversationId,
+                                        userId: participant.userId || 'N/A',
+                                        queueId: segment.queueId
+                                    };
+                                    
+                                    conversationMap.set(key, emailData);
+                                    parkedEmails.push(emailData);
+                                    
+                                    uniqueQueues.add(segment.queueId);
+                                    if (participant.userId) uniqueUsers.add(participant.userId);
+                                }
                             }
                         });
                     });
