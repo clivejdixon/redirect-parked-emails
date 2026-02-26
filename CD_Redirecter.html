@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Genesys Cloud - Parked Conversations Monitor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-right: 10px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .status {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+            display: block;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        thead {
+            background: #f8f9fa;
+        }
+
+        th {
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #333;
+            border-bottom: 2px solid #dee2e6;
+            font-size: 14px;
+        }
+
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #dee2e6;
+            font-size: 14px;
+            color: #555;
+        }
+
+        tr:hover {
+            background: #f8f9fa;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .badge-parked {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .refresh-info {
+            color: #666;
+            font-size: 12px;
+            margin-top: 10px;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .copy-btn {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
+            margin-left: 5px;
+        }
+
+        .copy-btn:hover {
+            background: #5a6268;
+        }
+
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>🎯 Genesys Cloud - Parked Conversations Monitor</h1>
+            <p class="subtitle">Monitor and track conversations in parked queues</p>
+
+            <div id="statusMessage" class="status"></div>
+
+            <div id="querySection">
+                <h3 style="margin-bottom: 20px; color: #333;">Parked Email Conversations</h3>
+                <button id="queryBtn" onclick="queryConversations()">🔍 Query Parked Emails</button>
+                <button onclick="queryConversations()" style="background: #28a745;">🔄 Refresh</button>
+                <button onclick="logout()" style="background: #dc3545;">🚪 Logout</button>
+                <p class="refresh-info">Showing currently parked email conversations</p>
+            </div>
+        </div>
+
+        <div id="resultsSection" class="card hidden">
+            <h2 style="margin-bottom: 20px; color: #333;">Results</h2>
+            
+            <div id="statsSection" class="stats hidden">
+                <div class="stat-card">
+                    <div class="stat-number" id="totalConversations">0</div>
+                    <div class="stat-label">Total Conversations</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="uniqueQueues">0</div>
+                    <div class="stat-label">Unique Queues</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="uniqueUsers">0</div>
+                    <div class="stat-label">Unique Users</div>
+                </div>
+            </div>
+
+            <div id="tableContainer"></div>
+        </div>
+    </div>
+
+    <script>
+        const REGION = 'euw2.pure.cloud';
+        const BASE_URL = `https://api.${REGION}`;
+        const LOGIN_URL = `https://login.${REGION}`;
+        let accessToken = null;
+        let tokenExpiry = null;
+
+        // Configuration - Add your Client ID here
+        const CLIENT_ID = '584c1e79-568e-4d71-91ff-3e00bf01d04b'; 
+
+        // Initialize on page load
+        window.onload = function() {
+            if (!CLIENT_ID) {
+                showStatus('❌ Error: CLIENT_ID not configured. Please add your Client ID to the code.', 'error');
+                return;
+            }
+
+            // Check if we're returning from OAuth redirect
+            const urlParams = new URLSearchParams(window.location.search);
+            const code = urlParams.get('code');
+            
+            if (code) {
+                handleOAuthCallback(code);
+            } else {
+                // Check for existing token
+                checkExistingToken();
+            }
+        };
+
+        function showStatus(message, type) {
+            const statusEl = document.getElementById('statusMessage');
+            statusEl.textContent = message;
+            statusEl.className = `status ${type}`;
+            
+            if (type === 'success' || type === 'info') {
+                setTimeout(() => {
+                    statusEl.style.display = 'none';
+                }, 5000);
+            }
+        }
+
+        async function initiateLogin() {
+            const redirectUri = window.location.origin + window.location.pathname;
+            
+            // Generate PKCE code verifier and challenge
+            const codeVerifier = generateCodeVerifier();
+            const codeChallenge = await generateCodeChallenge(codeVerifier);
+            
+            // Generate random state for CSRF protection
+            const state = generateRandomString(32);
+            
+            // Store for later verification
+            sessionStorage.setItem('pkce_code_verifier', codeVerifier);
+            sessionStorage.setItem('oauth_state', state);
+
+            // Build authorization URL for Authorization Code + PKCE
+            const authUrl = `${LOGIN_URL}/oauth/authorize?` +
+                `response_type=code&` +
+                `client_id=${encodeURIComponent(CLIENT_ID)}&` +
+                `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+                `state=${state}&` +
+                `code_challenge=${codeChallenge}&` +
+                `code_challenge_method=S256`;
+
+            // Redirect to Genesys Cloud login
+            window.location.href = authUrl;
+        }
+
+        async function handleOAuthCallback(code) {
+            const urlParams = new URLSearchParams(window.location.search);
+            const state = urlParams.get('state');
+            
+            // Verify state to prevent CSRF
+            const savedState = sessionStorage.getItem('oauth_state');
+            if (state !== savedState) {
+                showStatus('❌ Invalid state parameter. Possible CSRF attack.', 'error');
+                return;
+            }
+            
+            const codeVerifier = sessionStorage.getItem('pkce_code_verifier');
+            if (!codeVerifier) {
+                showStatus('❌ Missing code verifier. Please try logging in again.', 'error');
+                initiateLogin();
+                return;
+            }
+
+            // Exchange authorization code for access token
+            const redirectUri = window.location.origin + window.location.pathname;
+            
+            try {
+                const response = await fetch(`${BASE_URL}/oauth/token`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: new URLSearchParams({
+                        grant_type: 'authorization_code',
+                        code: code,
+                        redirect_uri: redirectUri,
+                        client_id: CLIENT_ID,
+                        code_verifier: codeVerifier
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error_description || errorData.message || 'Token exchange failed');
+                }
+
+                const data = await response.json();
+                
+                // Store token
+                accessToken = data.access_token;
+                const expiryTime = Date.now() + (parseInt(data.expires_in) * 1000);
+                tokenExpiry = expiryTime;
+                
+                sessionStorage.setItem('access_token', accessToken);
+                sessionStorage.setItem('token_expiry', expiryTime.toString());
+                
+                // Clean up
+                sessionStorage.removeItem('pkce_code_verifier');
+                sessionStorage.removeItem('oauth_state');
+                
+                // Clean up URL
+                window.history.replaceState({}, document.title, window.location.pathname);
+                
+                showStatus('✅ Authentication successful!', 'success');
+                
+            } catch (error) {
+                showStatus(`❌ Authentication failed: ${error.message}`, 'error');
+                sessionStorage.clear();
+                setTimeout(() => initiateLogin(), 3000);
+            }
+        }
+
+        function checkExistingToken() {
+            const savedToken = sessionStorage.getItem('access_token');
+            const savedExpiry = sessionStorage.getItem('token_expiry');
+            
+            if (savedToken && savedExpiry && Date.now() < parseInt(savedExpiry)) {
+                accessToken = savedToken;
+                tokenExpiry = parseInt(savedExpiry);
+                showStatus('✅ Already authenticated', 'success');
+            } else {
+                // No valid token, initiate login
+                showStatus('🔄 Redirecting to login...', 'info');
+                setTimeout(() => initiateLogin(), 1000);
+            }
+        }
+
+        function logout() {
+            accessToken = null;
+            tokenExpiry = null;
+            sessionStorage.clear();
+            showStatus('🔄 Logging out...', 'info');
+            setTimeout(() => initiateLogin(), 1000);
+        }
+
+        function generateCodeVerifier() {
+            const array = new Uint8Array(32);
+            window.crypto.getRandomValues(array);
+            return base64URLEncode(array);
+        }
+
+        async function generateCodeChallenge(verifier) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(verifier);
+            const hash = await window.crypto.subtle.digest('SHA-256', data);
+            return base64URLEncode(new Uint8Array(hash));
+        }
+
+        function base64URLEncode(buffer) {
+            const base64 = btoa(String.fromCharCode(...buffer));
+            return base64
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_')
+                .replace(/=/g, '');
+        }
+
+        function generateRandomString(length) {
+            const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+            let result = '';
+            const values = new Uint8Array(length);
+            window.crypto.getRandomValues(values);
+            for (let i = 0; i < length; i++) {
+                result += charset[values[i] % charset.length];
+            }
+            return result;
+        }
+
+        async function queryConversations() {
+            if (!accessToken) {
+                showStatus('Please authenticate first', 'error');
+                initiateLogin();
+                return;
+            }
+
+            const queryBtn = document.getElementById('queryBtn');
+            queryBtn.disabled = true;
+            queryBtn.textContent = '🔄 Querying...';
+
+            try {
+                // Query for active email conversations
+                const queryPayload = {
+                    interval: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() + '/' + new Date().toISOString(),
+                    order: 'desc',
+                    orderBy: 'conversationStart',
+                    paging: {
+                        pageSize: 100,
+                        pageNumber: 1
+                    },
+                    segmentFilters: [
+                        {
+                            type: 'and',
+                            predicates: [
+                                {
+                                    type: 'dimension',
+                                    dimension: 'mediaType',
+                                    value: 'email'
+                                },
+                                {
+                                    type: 'dimension',
+                                    dimension: 'queueId',
+                                    operator: 'exists'
+                                }
+                            ]
+                        }
+                    ],
+                    conversationFilters: [
+                        {
+                            type: 'and',
+                            predicates: [
+                                {
+                                    type: 'dimension',
+                                    dimension: 'conversationEnd',
+                                    operator: 'notExists'
+                                }
+                            ]
+                        }
+                    ]
+                };
+
+                const response = await fetch(`${BASE_URL}/api/v2/analytics/conversations/details/query`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${accessToken}`
+                    },
+                    body: JSON.stringify(queryPayload)
+                });
+
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        showStatus('❌ Session expired. Redirecting to login...', 'error');
+                        sessionStorage.clear();
+                        setTimeout(() => initiateLogin(), 2000);
+                        return;
+                    }
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || `Query failed: ${response.status}`);
+                }
+
+                const data = await response.json();
+                displayResults(data.conversations || []);
+                showStatus(`✅ Found ${data.conversations?.length || 0} parked email conversations`, 'success');
+
+            } catch (error) {
+                showStatus(`❌ Query failed: ${error.message}`, 'error');
+            } finally {
+                queryBtn.disabled = false;
+                queryBtn.textContent = '🔍 Query Parked Emails';
+            }
+        }
+
+        function displayResults(conversations) {
+            const resultsSection = document.getElementById('resultsSection');
+            const tableContainer = document.getElementById('tableContainer');
+            const statsSection = document.getElementById('statsSection');
+
+            resultsSection.classList.remove('hidden');
+
+            if (conversations.length === 0) {
+                tableContainer.innerHTML = `
+                    <div class="empty-state">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                        </svg>
+                        <p>No parked email conversations found</p>
+                    </div>
+                `;
+                statsSection.classList.add('hidden');
+                return;
+            }
+
+            // Extract parked email conversation data
+            const parkedEmails = [];
+            const uniqueQueues = new Set();
+            const uniqueUsers = new Set();
+
+            conversations.forEach(conv => {
+                // Find email segments in queues
+                conv.participants?.forEach(participant => {
+                    participant.sessions?.forEach(session => {
+                        session.segments?.forEach(segment => {
+                            // Filter for email media type and queued segments
+                            if (segment.queueId && session.mediaType === 'email') {
+                                parkedEmails.push({
+                                    conversationId: conv.conversationId,
+                                    userId: participant.userId || 'N/A',
+                                    queueId: segment.queueId
+                                });
+                                
+                                uniqueQueues.add(segment.queueId);
+                                if (participant.userId) uniqueUsers.add(participant.userId);
+                            }
+                        });
+                    });
+                });
+            });
+
+            // Update stats
+            document.getElementById('totalConversations').textContent = parkedEmails.length;
+            document.getElementById('uniqueQueues').textContent = uniqueQueues.size;
+            document.getElementById('uniqueUsers').textContent = uniqueUsers.size;
+            statsSection.classList.remove('hidden');
+
+            if (parkedEmails.length === 0) {
+                tableContainer.innerHTML = `
+                    <div class="empty-state">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                        </svg>
+                        <p>No parked email conversations found</p>
+                    </div>
+                `;
+                statsSection.classList.add('hidden');
+                return;
+            }
+
+            // Create table with only conversationId, userId, and queueId
+            let tableHTML = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Conversation ID</th>
+                            <th>User ID</th>
+                            <th>Queue ID</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            parkedEmails.forEach(item => {
+                tableHTML += `
+                    <tr>
+                        <td>
+                            <span style="font-family: monospace; font-size: 12px;">${item.conversationId}</span>
+                            <button class="copy-btn" onclick="copyToClipboard('${item.conversationId}')">📋</button>
+                        </td>
+                        <td>
+                            <span style="font-family: monospace; font-size: 12px;">${item.userId}</span>
+                            ${item.userId !== 'N/A' ? `<button class="copy-btn" onclick="copyToClipboard('${item.userId}')">📋</button>` : ''}
+                        </td>
+                        <td>
+                            <span style="font-family: monospace; font-size: 12px;">${item.queueId}</span>
+                            <button class="copy-btn" onclick="copyToClipboard('${item.queueId}')">📋</button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            tableHTML += `
+                    </tbody>
+                </table>
+            `;
+
+            tableContainer.innerHTML = tableHTML;
+        }
+
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                showStatus('✅ Copied to clipboard!', 'success');
+            }).catch(err => {
+                showStatus('❌ Failed to copy', 'error');
+            });
+        }
+
+
+    </script>
+</body>
+</html>
