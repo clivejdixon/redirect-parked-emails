@@ -193,6 +193,34 @@
         .copy-btn:hover {
             background: #5a6268;
         }
+
+        .id-column {
+            transition: all 0.3s ease;
+        }
+
+        .id-column.hidden {
+            display: none;
+        }
+
+        .redistribute-btn {
+            background: #ff6b6b;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .redistribute-btn:hover {
+            background: #ee5a52;
+        }
+
+        .redistribute-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body>
@@ -207,6 +235,7 @@
                 <h3 style="margin-bottom: 20px; color: #333;">Parked Email Conversations</h3>
                 <button id="queryBtn" onclick="queryConversations()">🔍 Query Parked Emails</button>
                 <button onclick="queryConversations()" style="background: #28a745;">🔄 Refresh</button>
+                <button id="toggleIdsBtn" onclick="toggleIds()" style="background: #6c757d;">👁️ Toggle IDs</button>
                 <button onclick="logout()" style="background: #dc3545;">🚪 Logout</button>
                 <p class="refresh-info">Showing currently parked email conversations</p>
             </div>
@@ -240,9 +269,14 @@
         const LOGIN_URL = `https://login.${REGION}`;
         let accessToken = null;
         let tokenExpiry = null;
+        let showIds = true; // Toggle state for showing/hiding ID columns
 
         // Configuration - Add your Client ID here
         const CLIENT_ID = 'e1f0834d-492c-40ff-9446-85e5e521eff4'; // REQUIRED: Add your Genesys Cloud OAuth Client ID
+
+        // Redistribution queue configuration
+        const REDISTRIBUTE_QUEUE_NAME = 'CD_RedistributeEmails';
+        const REDISTRIBUTE_QUEUE_ID = '3e47e701-fb9e-4682-b278-47c3252f4f39';
 
         // Initialize on page load
         window.onload = function() {
@@ -525,17 +559,24 @@
 
         async function getQueueName(queueId) {
             try {
+                console.log(`Fetching queue name for: ${queueId}`);
                 const response = await fetch(`${BASE_URL}/api/v2/routing/queues/${queueId}`, {
                     headers: {
                         'Authorization': `Bearer ${accessToken}`
                     }
                 });
+                console.log(`Queue API response status: ${response.status}`);
+                
                 if (response.ok) {
                     const data = await response.json();
+                    console.log(`Queue data received:`, data);
                     return data.name || queueId;
+                } else {
+                    const errorData = await response.json().catch(() => ({}));
+                    console.error(`Failed to fetch queue ${queueId}:`, response.status, errorData);
                 }
             } catch (error) {
-                console.error('Error fetching queue name:', error);
+                console.error(`Error fetching queue name for ${queueId}:`, error);
             }
             return queueId;
         }
@@ -543,17 +584,24 @@
         async function getUserName(userId) {
             if (!userId || userId === 'N/A') return 'N/A';
             try {
+                console.log(`Fetching user name for: ${userId}`);
                 const response = await fetch(`${BASE_URL}/api/v2/users/${userId}`, {
                     headers: {
                         'Authorization': `Bearer ${accessToken}`
                     }
                 });
+                console.log(`User API response status: ${response.status}`);
+                
                 if (response.ok) {
                     const data = await response.json();
+                    console.log(`User data received:`, data);
                     return data.name || userId;
+                } else {
+                    const errorData = await response.json().catch(() => ({}));
+                    console.error(`Failed to fetch user ${userId}:`, response.status, errorData);
                 }
             } catch (error) {
-                console.error('Error fetching user name:', error);
+                console.error(`Error fetching user name for ${userId}:`, error);
             }
             return userId;
         }
@@ -585,7 +633,14 @@
             const conversationMap = new Map(); // Track unique conversations to avoid duplicates
 
             conversations.forEach(conv => {
+                let lastParticipantId = null;
+                
                 conv.participants?.forEach(participant => {
+                    // Track the last participant ID
+                    if (participant.participantId) {
+                        lastParticipantId = participant.participantId;
+                    }
+                    
                     participant.sessions?.forEach(session => {
                         session.segments?.forEach(segment => {
                             // Filter for CURRENTLY parked emails:
@@ -611,6 +666,7 @@
                                     
                                     const emailData = {
                                         conversationId: conv.conversationId,
+                                        participantId: lastParticipantId || participant.participantId || 'N/A',
                                         userId: participant.userId || 'N/A',
                                         queueId: segment.queueId,
                                         segmentStart: segment.segmentStart,
@@ -670,39 +726,49 @@
                 <table>
                     <thead>
                         <tr>
-                            <th>Conversation ID</th>
-                            <th>User ID</th>
+                            <th class="id-column">Conversation ID</th>
+                            <th class="id-column">Participant ID</th>
+                            <th class="id-column">User ID</th>
                             <th>User Name</th>
-                            <th>Queue ID</th>
+                            <th class="id-column">Queue ID</th>
                             <th>Queue Name</th>
                             <th>From Address</th>
                             <th>Subject</th>
                             <th>Expiration Date/Time</th>
+                            <th>Action</th>
                         </tr>
                     </thead>
                     <tbody>
             `;
 
-            enrichedEmails.forEach(item => {
+            enrichedEmails.forEach((item, index) => {
+                const buttonId = `redistribute-btn-${index}`;
                 tableHTML += `
                     <tr>
-                        <td>
-                            <span style="font-family: monospace; font-size: 12px;">${item.conversationId.substring(0, 15)}...</span>
+                        <td class="id-column">
+                            <span style="font-family: monospace; font-size: 12px;">${item.conversationId.substring(0, 12)}...</span>
                             <button class="copy-btn" onclick="copyToClipboard('${item.conversationId}')">📋</button>
                         </td>
-                        <td>
-                            <span style="font-family: monospace; font-size: 12px;">${item.userId !== 'N/A' ? item.userId.substring(0, 15) + '...' : 'N/A'}</span>
+                        <td class="id-column">
+                            <span style="font-family: monospace; font-size: 12px;">${item.participantId !== 'N/A' ? item.participantId.substring(0, 12) + '...' : 'N/A'}</span>
+                            ${item.participantId !== 'N/A' ? `<button class="copy-btn" onclick="copyToClipboard('${item.participantId}')">📋</button>` : ''}
+                        </td>
+                        <td class="id-column">
+                            <span style="font-family: monospace; font-size: 12px;">${item.userId !== 'N/A' ? item.userId.substring(0, 12) + '...' : 'N/A'}</span>
                             ${item.userId !== 'N/A' ? `<button class="copy-btn" onclick="copyToClipboard('${item.userId}')">📋</button>` : ''}
                         </td>
                         <td>${item.userName}</td>
-                        <td>
-                            <span style="font-family: monospace; font-size: 12px;">${item.queueId.substring(0, 15)}...</span>
+                        <td class="id-column">
+                            <span style="font-family: monospace; font-size: 12px;">${item.queueId.substring(0, 12)}...</span>
                             <button class="copy-btn" onclick="copyToClipboard('${item.queueId}')">📋</button>
                         </td>
                         <td>${item.queueName}</td>
                         <td>${item.addressFrom}</td>
                         <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${item.subject}">${item.subject}</td>
                         <td>${item.expirationDate}</td>
+                        <td>
+                            <button id="${buttonId}" class="redistribute-btn" onclick="redistributeEmail('${item.conversationId}', '${item.participantId}', document.getElementById('${buttonId}'))">↻ Redistribute</button>
+                        </td>
                     </tr>
                 `;
             });
@@ -721,6 +787,64 @@
             }).catch(err => {
                 showStatus('❌ Failed to copy', 'error');
             });
+        }
+
+        function toggleIds() {
+            showIds = !showIds;
+            const idColumns = document.querySelectorAll('.id-column');
+            idColumns.forEach(col => {
+                if (showIds) {
+                    col.classList.remove('hidden');
+                } else {
+                    col.classList.add('hidden');
+                }
+            });
+            
+            const toggleBtn = document.getElementById('toggleIdsBtn');
+            toggleBtn.textContent = showIds ? '👁️ Hide IDs' : '👁️ Show IDs';
+        }
+
+        async function redistributeEmail(conversationId, participantId, rowButton) {
+            if (!confirm('Are you sure you want to redistribute this email to the CD_RedistributeEmails queue?')) {
+                return;
+            }
+
+            rowButton.disabled = true;
+            rowButton.textContent = '⏳ Redistributing...';
+
+            try {
+                const response = await fetch(`${BASE_URL}/api/v2/conversations/${conversationId}/participants/${participantId}/replace/queue`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${accessToken}`
+                    },
+                    body: JSON.stringify({
+                        transferType: 'Unattended',
+                        keepInternalMessageAlive: true,
+                        queueName: REDISTRIBUTE_QUEUE_NAME,
+                        queueId: REDISTRIBUTE_QUEUE_ID
+                    })
+                });
+
+                if (response.ok) {
+                    showStatus('✅ Email redistributed successfully!', 'success');
+                    rowButton.textContent = '✓ Redistributed';
+                    rowButton.style.background = '#28a745';
+                    
+                    // Refresh the list after 2 seconds
+                    setTimeout(() => queryConversations(), 2000);
+                } else {
+                    const errorData = await response.json().catch(() => ({}));
+                    console.error('Redistribution failed:', errorData);
+                    throw new Error(errorData.message || `Failed with status ${response.status}`);
+                }
+            } catch (error) {
+                console.error('Error redistributing email:', error);
+                showStatus(`❌ Redistribution failed: ${error.message}`, 'error');
+                rowButton.disabled = false;
+                rowButton.textContent = '↻ Redistribute';
+            }
         }
     </script>
 </body>
