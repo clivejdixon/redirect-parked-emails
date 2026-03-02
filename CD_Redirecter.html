@@ -638,13 +638,15 @@
                                 segmentEnd: segment.segmentEnd,
                                 disconnectType: segment.disconnectType,
                                 hasSegmentEnd: !!segment.segmentEnd,
-                                hasDisconnectType: !!segment.disconnectType
+                                hasDisconnectType: !!segment.disconnectType,
+                                segmentEndValue: segment.segmentEnd || 'NONE',
+                                disconnectTypeValue: segment.disconnectType || 'NONE'
                             });
                             
                             // STRICT filtering for CURRENTLY parked emails ONLY:
-                            // Must be a 'park' segment type specifically
+                            // Check for 'parked' segment type (not 'park')
                             const isCurrentlyParked = (
-                                segment.segmentType === 'park' &&  // Must be park type
+                                segment.segmentType === 'parked' &&  // Must be 'parked' type
                                 segment.queueId && 
                                 session.mediaType === 'email' && 
                                 segment.segmentStart && 
@@ -652,7 +654,7 @@
                                 (!segment.disconnectType || segment.disconnectType === '') // Not transferred
                             );
                             
-                            console.log(`  -> isCurrentlyParked: ${isCurrentlyParked}`);
+                            console.log(`  -> isCurrentlyParked: ${isCurrentlyParked} (segmentType='${segment.segmentType}', hasEnd=${!!segment.segmentEnd}, disconnectType='${segment.disconnectType || 'none'}')`);
                             
                             if (isCurrentlyParked) {
                                 const key = conv.conversationId;
