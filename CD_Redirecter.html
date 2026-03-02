@@ -511,7 +511,7 @@
                 console.log('Total segments found:', totalSegments);
                 console.log('Currently active parked segments:', activeSegments);
                 
-                displayResults(data.conversations || []);
+                await displayResults(data.conversations || []);
                 showStatus(`✅ Found ${activeSegments} currently parked email conversations`, 'success');
 
             } catch (error) {
@@ -523,7 +523,42 @@
             }
         }
 
-        function displayResults(conversations) {
+        async function getQueueName(queueId) {
+            try {
+                const response = await fetch(`${BASE_URL}/api/v2/routing/queues/${queueId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`
+                    }
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    return data.name || queueId;
+                }
+            } catch (error) {
+                console.error('Error fetching queue name:', error);
+            }
+            return queueId;
+        }
+
+        async function getUserName(userId) {
+            if (!userId || userId === 'N/A') return 'N/A';
+            try {
+                const response = await fetch(`${BASE_URL}/api/v2/users/${userId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`
+                    }
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    return data.name || userId;
+                }
+            } catch (error) {
+                console.error('Error fetching user name:', error);
+            }
+            return userId;
+        }
+
+        async function displayResults(conversations) {
             const resultsSection = document.getElementById('resultsSection');
             const tableContainer = document.getElementById('tableContainer');
             const statsSection = document.getElementById('statsSection');
@@ -570,10 +605,18 @@
                                 
                                 // Only add if we haven't seen this conversation yet, or update with latest info
                                 if (!conversationMap.has(key)) {
+                                    // Calculate expiration: segmentStart + 7 days
+                                    const segmentStartDate = new Date(segment.segmentStart);
+                                    const expirationDate = new Date(segmentStartDate.getTime() + (7 * 24 * 60 * 60 * 1000));
+                                    
                                     const emailData = {
                                         conversationId: conv.conversationId,
                                         userId: participant.userId || 'N/A',
-                                        queueId: segment.queueId
+                                        queueId: segment.queueId,
+                                        segmentStart: segment.segmentStart,
+                                        expirationDate: expirationDate.toLocaleString(),
+                                        addressFrom: session.addressFrom || 'N/A',
+                                        subject: segment.subject || 'No Subject'
                                     };
                                     
                                     conversationMap.set(key, emailData);
@@ -607,34 +650,59 @@
                 return;
             }
 
-            // Create table with only conversationId, userId, and queueId
+            // Fetch queue and user names in parallel
+            tableContainer.innerHTML = '<p style="text-align: center; padding: 20px;">Loading queue and user details...</p>';
+            
+            const enrichedEmails = await Promise.all(parkedEmails.map(async (email) => {
+                const [queueName, userName] = await Promise.all([
+                    getQueueName(email.queueId),
+                    getUserName(email.userId)
+                ]);
+                return {
+                    ...email,
+                    queueName,
+                    userName
+                };
+            }));
+
+            // Create table with all requested fields
             let tableHTML = `
                 <table>
                     <thead>
                         <tr>
                             <th>Conversation ID</th>
                             <th>User ID</th>
+                            <th>User Name</th>
                             <th>Queue ID</th>
+                            <th>Queue Name</th>
+                            <th>From Address</th>
+                            <th>Subject</th>
+                            <th>Expiration Date/Time</th>
                         </tr>
                     </thead>
                     <tbody>
             `;
 
-            parkedEmails.forEach(item => {
+            enrichedEmails.forEach(item => {
                 tableHTML += `
                     <tr>
                         <td>
-                            <span style="font-family: monospace; font-size: 12px;">${item.conversationId}</span>
+                            <span style="font-family: monospace; font-size: 12px;">${item.conversationId.substring(0, 15)}...</span>
                             <button class="copy-btn" onclick="copyToClipboard('${item.conversationId}')">📋</button>
                         </td>
                         <td>
-                            <span style="font-family: monospace; font-size: 12px;">${item.userId}</span>
+                            <span style="font-family: monospace; font-size: 12px;">${item.userId !== 'N/A' ? item.userId.substring(0, 15) + '...' : 'N/A'}</span>
                             ${item.userId !== 'N/A' ? `<button class="copy-btn" onclick="copyToClipboard('${item.userId}')">📋</button>` : ''}
                         </td>
+                        <td>${item.userName}</td>
                         <td>
-                            <span style="font-family: monospace; font-size: 12px;">${item.queueId}</span>
+                            <span style="font-family: monospace; font-size: 12px;">${item.queueId.substring(0, 15)}...</span>
                             <button class="copy-btn" onclick="copyToClipboard('${item.queueId}')">📋</button>
                         </td>
+                        <td>${item.queueName}</td>
+                        <td>${item.addressFrom}</td>
+                        <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${item.subject}">${item.subject}</td>
+                        <td>${item.expirationDate}</td>
                     </tr>
                 `;
             });
