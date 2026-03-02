@@ -524,6 +524,11 @@
 
                 const data = await response.json();
                 console.log('✓ Query successful:', data.conversations?.length || 0, 'conversations');
+                console.log('=== ALL CONVERSATION IDs RETURNED ===');
+                data.conversations?.forEach(conv => {
+                    console.log(`Conversation: ${conv.conversationId}`);
+                });
+                console.log('=====================================');
                 
                 await displayResults(data.conversations || []);
 
@@ -614,6 +619,8 @@
             conversations.forEach(conv => {
                 let lastParticipantId = null;
                 
+                console.log(`\n=== Processing Conversation: ${conv.conversationId} ===`);
+                
                 conv.participants?.forEach(participant => {
                     // Track the last participant ID
                     if (participant.participantId) {
@@ -622,15 +629,30 @@
                     
                     participant.sessions?.forEach(session => {
                         session.segments?.forEach(segment => {
+                            console.log(`  Segment:`, {
+                                conversationId: conv.conversationId,
+                                segmentType: segment.segmentType,
+                                queueId: segment.queueId,
+                                mediaType: session.mediaType,
+                                segmentStart: segment.segmentStart,
+                                segmentEnd: segment.segmentEnd,
+                                disconnectType: segment.disconnectType,
+                                hasSegmentEnd: !!segment.segmentEnd,
+                                hasDisconnectType: !!segment.disconnectType
+                            });
+                            
                             // STRICT filtering for CURRENTLY parked emails ONLY:
-                            // Must have queueId AND email type AND NOT ended AND NOT transferred
+                            // Must be a 'park' segment type specifically
                             const isCurrentlyParked = (
+                                segment.segmentType === 'park' &&  // Must be park type
                                 segment.queueId && 
                                 session.mediaType === 'email' && 
                                 segment.segmentStart && 
                                 !segment.segmentEnd &&  // No end time = still active
                                 (!segment.disconnectType || segment.disconnectType === '') // Not transferred
                             );
+                            
+                            console.log(`  -> isCurrentlyParked: ${isCurrentlyParked}`);
                             
                             if (isCurrentlyParked) {
                                 const key = conv.conversationId;
@@ -655,6 +677,8 @@
                                     
                                     uniqueQueues.add(segment.queueId);
                                     if (participant.userId) uniqueUsers.add(participant.userId);
+                                    
+                                    console.log(`  ✓ ADDED TO PARKED EMAILS LIST`);
                                 }
                             }
                         });
