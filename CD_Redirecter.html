@@ -54,6 +54,7 @@
             cursor: pointer;
             transition: transform 0.2s, box-shadow 0.2s;
             margin-right: 10px;
+            margin-bottom: 10px;
         }
 
         button:hover {
@@ -211,6 +212,7 @@
             font-size: 12px;
             cursor: pointer;
             font-weight: 600;
+            white-space: nowrap;
         }
 
         .redistribute-btn:hover {
@@ -221,9 +223,33 @@
             background: #ccc;
             cursor: not-allowed;
         }
+
+        .version-display {
+            position: fixed;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(255,255,255,0.95);
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 12px;
+            color: #666;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 1000;
+            border: 2px solid #667eea;
+            font-weight: 500;
+        }
+
+        .version-display strong {
+            color: #333;
+        }
     </style>
 </head>
 <body>
+    <!-- Version Display - Bottom Left -->
+    <div class="version-display">
+        <strong>Version:</strong> v2.2.0 | <strong>Updated:</strong> 2026-03-02 13:15 UTC
+    </div>
+
     <div class="container">
         <div class="card">
             <h1>📧 Genesys Cloud - Parked Email Monitor</h1>
@@ -269,57 +295,40 @@
         const LOGIN_URL = `https://login.${REGION}`;
         let accessToken = null;
         let tokenExpiry = null;
-        let showIds = true; // Toggle state for showing/hiding ID columns
+        let showIds = true;
 
-        // Configuration - Add your Client ID here
-        const CLIENT_ID = 'e1f0834d-492c-40ff-9446-85e5e521eff4'; // REQUIRED: Add your Genesys Cloud OAuth Client ID
-
-        // Redistribution queue configuration
+        // Configuration
+        const CLIENT_ID = 'e1f0834d-492c-40ff-9446-85e5e521eff4'; // Add your Client ID here
         const REDISTRIBUTE_QUEUE_NAME = 'CD_RedistributeEmails';
         const REDISTRIBUTE_QUEUE_ID = '3e47e701-fb9e-4682-b278-47c3252f4f39';
 
-        // Initialize on page load
         window.onload = function() {
-            // Show configuration info
             const currentUrl = window.location.href;
             const redirectUri = window.location.origin + window.location.pathname;
             
             console.log('=== CONFIGURATION INFO ===');
+            console.log('Version: v2.2.0 - 2026-03-02 13:15 UTC');
             console.log('Current URL:', currentUrl);
-            console.log('Redirect URI being used:', redirectUri);
+            console.log('Redirect URI:', redirectUri);
             console.log('Client ID:', CLIENT_ID || 'NOT SET');
             console.log('Region:', REGION);
             console.log('========================');
             
             if (!CLIENT_ID) {
-                showStatus('❌ Error: CLIENT_ID not configured. Please add your Client ID on line 305.', 'error');
-                document.getElementById('querySection').innerHTML = `
-                    <h3 style="color: #d9534f; margin-bottom: 15px;">⚠️ Configuration Required</h3>
-                    <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #ffc107;">
-                        <p style="margin-bottom: 10px;"><strong>Redirect URI to use in Genesys OAuth:</strong></p>
-                        <code style="background: #fff; padding: 10px; display: block; border-radius: 4px; word-break: break-all;">${redirectUri}</code>
-                    </div>
-                    <p>1. Add your Client ID on line 305 of this HTML file</p>
-                    <p>2. Configure the redirect URI above in your Genesys Cloud OAuth client</p>
-                `;
+                showStatus('❌ Error: CLIENT_ID not configured. Please add your Client ID.', 'error');
                 return;
             }
 
-            // Show redirect URI for user to verify
             const infoDiv = document.createElement('div');
             infoDiv.style.cssText = 'background: #d1ecf1; padding: 12px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #bee5eb; font-size: 13px;';
             infoDiv.innerHTML = `
                 <strong>ℹ️ Configuration Info:</strong><br>
                 <strong>Redirect URI:</strong> <code style="background: #fff; padding: 2px 6px; border-radius: 3px;">${redirectUri}</code><br>
-                <strong>Client ID:</strong> <code style="background: #fff; padding: 2px 6px; border-radius: 3px;">${CLIENT_ID.substring(0, 20)}...</code><br>
-                <small>Make sure this EXACT redirect URI is in your Genesys OAuth client settings</small>
+                <strong>Client ID:</strong> <code style="background: #fff; padding: 2px 6px; border-radius: 3px;">${CLIENT_ID.substring(0, 20)}...</code>
             `;
             document.getElementById('querySection').insertBefore(infoDiv, document.getElementById('querySection').firstChild);
 
-            // Check if we're returning from OAuth redirect (token in URL fragment)
             handleOAuthCallback();
-            
-            // Check for existing token
             if (!accessToken) {
                 checkExistingToken();
             }
@@ -339,30 +348,19 @@
 
         function initiateLogin() {
             const redirectUri = window.location.origin + window.location.pathname;
-            
-            console.log('Initiating login with Implicit Grant:', {
-                clientId: CLIENT_ID,
-                redirectUri: redirectUri,
-                region: REGION
-            });
-            
-            // Generate random state for CSRF protection
             const state = generateRandomString(32);
             sessionStorage.setItem('oauth_state', state);
 
-            // Build authorization URL for Implicit Grant (Token)
             const authUrl = `${LOGIN_URL}/oauth/authorize?` +
                 `response_type=token&` +
                 `client_id=${encodeURIComponent(CLIENT_ID)}&` +
                 `redirect_uri=${encodeURIComponent(redirectUri)}&` +
                 `state=${state}`;
 
-            console.log('Redirecting to Genesys Cloud login');
             window.location.href = authUrl;
         }
 
         function handleOAuthCallback() {
-            // Token comes back in URL fragment (#access_token=...)
             const hash = window.location.hash.substring(1);
             if (!hash) return;
             
@@ -371,28 +369,19 @@
             const state = params.get('state');
             const expiresIn = params.get('expires_in');
             const error = params.get('error');
-            const errorDescription = params.get('error_description');
             
-            // Check for OAuth errors
             if (error) {
-                showStatus(`❌ OAuth Error: ${error} - ${errorDescription || ''}`, 'error');
-                console.error('OAuth Error:', { error, errorDescription });
-                sessionStorage.clear();
+                showStatus(`❌ OAuth Error: ${error}`, 'error');
                 return;
             }
             
             if (token) {
-                console.log('✓ Token received from OAuth');
-                
-                // Verify state to prevent CSRF
                 const savedState = sessionStorage.getItem('oauth_state');
                 if (state && savedState && state !== savedState) {
-                    showStatus('❌ Invalid state parameter. Possible CSRF attack.', 'error');
-                    console.error('State mismatch');
+                    showStatus('❌ Invalid state parameter', 'error');
                     return;
                 }
                 
-                // Store token
                 accessToken = token;
                 const expiryTime = Date.now() + (parseInt(expiresIn || 86400) * 1000);
                 tokenExpiry = expiryTime;
@@ -401,9 +390,7 @@
                 sessionStorage.setItem('token_expiry', expiryTime.toString());
                 sessionStorage.removeItem('oauth_state');
                 
-                // Clean up URL
                 window.history.replaceState({}, document.title, window.location.pathname);
-                
                 showStatus('✅ Authentication successful!', 'success');
             }
         }
@@ -415,11 +402,8 @@
             if (savedToken && savedExpiry && Date.now() < parseInt(savedExpiry)) {
                 accessToken = savedToken;
                 tokenExpiry = parseInt(savedExpiry);
-                console.log('✓ Using existing token');
                 showStatus('✅ Already authenticated', 'success');
             } else {
-                // No valid token, initiate login
-                console.log('No valid token found, initiating login...');
                 showStatus('🔄 Redirecting to login...', 'info');
                 setTimeout(() => initiateLogin(), 1000);
             }
@@ -456,7 +440,6 @@
             queryBtn.textContent = '🔄 Querying...';
 
             try {
-                // Query for active email conversations
                 const queryPayload = {
                     interval: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() + '/' + new Date().toISOString(),
                     order: 'desc',
@@ -501,7 +484,6 @@
                     ]
                 };
 
-                console.log('Querying conversations API...');
                 const response = await fetch(`${BASE_URL}/api/v2/analytics/conversations/details/query`, {
                     method: 'POST',
                     headers: {
@@ -524,11 +506,6 @@
 
                 const data = await response.json();
                 console.log('✓ Query successful:', data.conversations?.length || 0, 'conversations');
-                console.log('=== ALL CONVERSATION IDs RETURNED ===');
-                data.conversations?.forEach(conv => {
-                    console.log(`Conversation: ${conv.conversationId}`);
-                });
-                console.log('=====================================');
                 
                 await displayResults(data.conversations || []);
 
@@ -543,21 +520,12 @@
 
         async function getQueueName(queueId) {
             try {
-                console.log(`Fetching queue name for: ${queueId}`);
                 const response = await fetch(`${BASE_URL}/api/v2/routing/queues/${queueId}`, {
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`
-                    }
+                    headers: { 'Authorization': `Bearer ${accessToken}` }
                 });
-                console.log(`Queue API response status: ${response.status}`);
-                
                 if (response.ok) {
                     const data = await response.json();
-                    console.log(`Queue data received:`, data);
                     return data.name || queueId;
-                } else {
-                    const errorData = await response.json().catch(() => ({}));
-                    console.error(`Failed to fetch queue ${queueId}:`, response.status, errorData);
                 }
             } catch (error) {
                 console.error(`Error fetching queue name for ${queueId}:`, error);
@@ -568,21 +536,12 @@
         async function getUserName(userId) {
             if (!userId || userId === 'N/A') return 'N/A';
             try {
-                console.log(`Fetching user name for: ${userId}`);
                 const response = await fetch(`${BASE_URL}/api/v2/users/${userId}`, {
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`
-                    }
+                    headers: { 'Authorization': `Bearer ${accessToken}` }
                 });
-                console.log(`User API response status: ${response.status}`);
-                
                 if (response.ok) {
                     const data = await response.json();
-                    console.log(`User data received:`, data);
                     return data.name || userId;
-                } else {
-                    const errorData = await response.json().catch(() => ({}));
-                    console.error(`Failed to fetch user ${userId}:`, response.status, errorData);
                 }
             } catch (error) {
                 console.error(`Error fetching user name for ${userId}:`, error);
@@ -610,7 +569,6 @@
                 return;
             }
 
-            // Extract CURRENTLY parked email conversation data
             const parkedEmails = [];
             const uniqueQueues = new Set();
             const uniqueUsers = new Set();
@@ -619,42 +577,21 @@
             conversations.forEach(conv => {
                 let lastParticipantId = null;
                 
-                console.log(`\n=== Processing Conversation: ${conv.conversationId} ===`);
-                
                 conv.participants?.forEach(participant => {
-                    // Track the last participant ID
                     if (participant.participantId) {
                         lastParticipantId = participant.participantId;
                     }
                     
                     participant.sessions?.forEach(session => {
                         session.segments?.forEach(segment => {
-                            console.log(`  Segment:`, {
-                                conversationId: conv.conversationId,
-                                segmentType: segment.segmentType,
-                                queueId: segment.queueId,
-                                mediaType: session.mediaType,
-                                segmentStart: segment.segmentStart,
-                                segmentEnd: segment.segmentEnd,
-                                disconnectType: segment.disconnectType,
-                                hasSegmentEnd: !!segment.segmentEnd,
-                                hasDisconnectType: !!segment.disconnectType,
-                                segmentEndValue: segment.segmentEnd || 'NONE',
-                                disconnectTypeValue: segment.disconnectType || 'NONE'
-                            });
-                            
-                            // STRICT filtering for CURRENTLY parked emails ONLY:
-                            // Check for 'parked' segment type (not 'park')
                             const isCurrentlyParked = (
-                                segment.segmentType === 'parked' &&  // Must be 'parked' type
+                                segment.segmentType === 'parked' &&
                                 segment.queueId && 
                                 session.mediaType === 'email' && 
                                 segment.segmentStart && 
-                                !segment.segmentEnd &&  // No end time = still active
-                                (!segment.disconnectType || segment.disconnectType === '') // Not transferred
+                                !segment.segmentEnd &&
+                                (!segment.disconnectType || segment.disconnectType === '')
                             );
-                            
-                            console.log(`  -> isCurrentlyParked: ${isCurrentlyParked} (segmentType='${segment.segmentType}', hasEnd=${!!segment.segmentEnd}, disconnectType='${segment.disconnectType || 'none'}')`);
                             
                             if (isCurrentlyParked) {
                                 const key = conv.conversationId;
@@ -679,8 +616,6 @@
                                     
                                     uniqueQueues.add(segment.queueId);
                                     if (participant.userId) uniqueUsers.add(participant.userId);
-                                    
-                                    console.log(`  ✓ ADDED TO PARKED EMAILS LIST`);
                                 }
                             }
                         });
@@ -690,7 +625,6 @@
 
             console.log(`Found ${parkedEmails.length} currently parked emails`);
 
-            // Update stats
             document.getElementById('totalConversations').textContent = parkedEmails.length;
             document.getElementById('uniqueQueues').textContent = uniqueQueues.size;
             document.getElementById('uniqueUsers').textContent = uniqueUsers.size;
@@ -710,7 +644,6 @@
                 return;
             }
 
-            // Fetch queue and user names in parallel
             tableContainer.innerHTML = '<p style="text-align: center; padding: 20px;">Loading queue and user details...</p>';
             
             const enrichedEmails = await Promise.all(parkedEmails.map(async (email) => {
@@ -718,14 +651,9 @@
                     getQueueName(email.queueId),
                     getUserName(email.userId)
                 ]);
-                return {
-                    ...email,
-                    queueName,
-                    userName
-                };
+                return { ...email, queueName, userName };
             }));
 
-            // Create table - Conversation ID and Participant ID always visible, User ID and Queue ID toggleable
             let tableHTML = `
                 <table>
                     <thead>
@@ -771,17 +699,16 @@
                         <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${item.subject}">${item.subject}</td>
                         <td style="white-space: nowrap;">${item.expirationDate}</td>
                         <td>
-                            <button id="${buttonId}" class="redistribute-btn" onclick="redistributeEmail('${item.conversationId}', '${item.participantId}', document.getElementById('${buttonId}'))">↻ Redistribute</button>
+                            <button id="${buttonId}" class="redistribute-btn" 
+                                onclick="redistributeEmail('${item.conversationId}', '${item.participantId}', '${item.userId}', '${item.queueId}', document.getElementById('${buttonId}'))">
+                                ↻ Redistribute
+                            </button>
                         </td>
                     </tr>
                 `;
             });
 
-            tableHTML += `
-                    </tbody>
-                </table>
-            `;
-
+            tableHTML += `</tbody></table>`;
             tableContainer.innerHTML = tableHTML;
             showStatus(`✅ Found ${parkedEmails.length} currently parked email conversations`, 'success');
         }
@@ -809,16 +736,46 @@
             toggleBtn.textContent = showIds ? '👁️ Hide IDs' : '👁️ Show IDs';
         }
 
-        async function redistributeEmail(conversationId, participantId, rowButton) {
+        async function redistributeEmail(conversationId, participantId, userId, queueId, rowButton) {
             if (!confirm('Are you sure you want to redistribute this email to the CD_RedistributeEmails queue?')) {
                 return;
             }
 
             rowButton.disabled = true;
-            rowButton.textContent = '⏳ Redistributing...';
+            rowButton.textContent = '⏳ Updating...';
 
             try {
-                const response = await fetch(`${BASE_URL}/api/v2/conversations/${conversationId}/participants/${participantId}/replace/queue`, {
+                // Step 1: PATCH participant attributes to add userId and queueId to participant data
+                console.log(`Step 1: PATCH attributes for conversation ${conversationId}, participant ${participantId}`);
+                console.log(`Adding UserId: ${userId}, QueueId: ${queueId}`);
+                
+                const patchResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/attributes`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${accessToken}`
+                    },
+                    body: JSON.stringify({
+                        attributes: {
+                            UserId: userId,
+                            QueueId: queueId
+                        }
+                    })
+                });
+
+                if (!patchResponse.ok) {
+                    const patchError = await patchResponse.json().catch(() => ({}));
+                    console.error('PATCH attributes failed:', patchError);
+                    throw new Error(`Failed to update attributes: ${patchError.message || patchResponse.status}`);
+                }
+
+                console.log('✓ Participant attributes updated successfully');
+                rowButton.textContent = '⏳ Transferring...';
+
+                // Step 2: Transfer to redistribution queue
+                console.log(`Step 2: Transferring to queue ${REDISTRIBUTE_QUEUE_NAME}`);
+                
+                const transferResponse = await fetch(`${BASE_URL}/api/v2/conversations/${conversationId}/participants/${participantId}/replace/queue`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -832,20 +789,20 @@
                     })
                 });
 
-                if (response.ok) {
-                    showStatus('✅ Email redistributed successfully!', 'success');
-                    rowButton.textContent = '✓ Redistributed';
+                if (transferResponse.ok) {
+                    console.log('✓ Email redistributed successfully');
+                    showStatus('✅ Email redistributed successfully! Attributes saved: UserId & QueueId', 'success');
+                    rowButton.textContent = '✓ Done';
                     rowButton.style.background = '#28a745';
                     
-                    // Refresh the list after 2 seconds
                     setTimeout(() => queryConversations(), 2000);
                 } else {
-                    const errorData = await response.json().catch(() => ({}));
-                    console.error('Redistribution failed:', errorData);
-                    throw new Error(errorData.message || `Failed with status ${response.status}`);
+                    const transferError = await transferResponse.json().catch(() => ({}));
+                    console.error('Transfer failed:', transferError);
+                    throw new Error(transferError.message || `Transfer failed: ${transferResponse.status}`);
                 }
             } catch (error) {
-                console.error('Error redistributing email:', error);
+                console.error('Redistribution error:', error);
                 showStatus(`❌ Redistribution failed: ${error.message}`, 'error');
                 rowButton.disabled = false;
                 rowButton.textContent = '↻ Redistribute';
