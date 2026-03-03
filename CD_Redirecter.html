@@ -247,7 +247,7 @@
 <body>
     <!-- Version Display - Bottom Left -->
     <div class="version-display">
-        <strong>Version:</strong> v2.2.0 | <strong>Updated:</strong> 2026-03-02 13:15 UTC
+        <strong>Version:</strong> v2.22 | <strong>Updated:</strong> 2026-03-02 13:30 UTC
     </div>
 
     <div class="container">
@@ -299,8 +299,6 @@
 
         // Configuration
         const CLIENT_ID = 'e1f0834d-492c-40ff-9446-85e5e521eff4'; // Add your Client ID here
-       // const REDISTRIBUTE_QUEUE_NAME = 'CD_RedistributeEmails';
-       // const REDISTRIBUTE_QUEUE_ID = '3e47e701-fb9e-4682-b278-47c3252f4f39';
         const REDISTRIBUTE_QUEUE_NAME = 'CD_Queue1';
         const REDISTRIBUTE_QUEUE_ID = '50099ff1-bb3e-42af-9560-b02fd10a762e';
 
@@ -309,7 +307,7 @@
             const redirectUri = window.location.origin + window.location.pathname;
             
             console.log('=== CONFIGURATION INFO ===');
-            console.log('Version: v2.2.1 - 2026-03-02 13:15 UTC');
+            console.log('Version: v2.22 - 2026-03-02 13:30 UTC');
             console.log('Current URL:', currentUrl);
             console.log('Redirect URI:', redirectUri);
             console.log('Client ID:', CLIENT_ID || 'NOT SET');
@@ -578,10 +576,17 @@
 
             conversations.forEach(conv => {
                 let lastParticipantId = null;
+                let lastWorkflowParticipantId = null;
                 
                 conv.participants?.forEach(participant => {
+                    // Track last participant ID
                     if (participant.participantId) {
                         lastParticipantId = participant.participantId;
+                    }
+                    
+                    // Track last workflow participant ID
+                    if (participant.purpose === 'workflow' && participant.participantId) {
+                        lastWorkflowParticipantId = participant.participantId;
                     }
                     
                     participant.sessions?.forEach(session => {
@@ -605,6 +610,7 @@
                                     const emailData = {
                                         conversationId: conv.conversationId,
                                         participantId: lastParticipantId || participant.participantId || 'N/A',
+                                        workflowParticipantId: lastWorkflowParticipantId || lastParticipantId || participant.participantId || 'N/A',
                                         userId: participant.userId || 'N/A',
                                         queueId: segment.queueId,
                                         segmentStart: segment.segmentStart,
@@ -702,7 +708,7 @@
                         <td style="white-space: nowrap;">${item.expirationDate}</td>
                         <td>
                             <button id="${buttonId}" class="redistribute-btn" 
-                                onclick="redistributeEmail('${item.conversationId}', '${item.participantId}', '${item.userId}', '${item.queueId}', document.getElementById('${buttonId}'))">
+                                onclick="redistributeEmail('${item.conversationId}', '${item.participantId}', '${item.workflowParticipantId}', '${item.userId}', '${item.queueId}', document.getElementById('${buttonId}'))">
                                 ↻ Redistribute
                             </button>
                         </td>
@@ -738,8 +744,8 @@
             toggleBtn.textContent = showIds ? '👁️ Hide IDs' : '👁️ Show IDs';
         }
 
-        async function redistributeEmail(conversationId, participantId, userId, queueId, rowButton) {
-            if (!confirm('Are you sure you want to redistribute this email to the CD_RedistributeEmails queue?')) {
+        async function redistributeEmail(conversationId, participantId, workflowParticipantId, userId, queueId, rowButton) {
+            if (!confirm('Are you sure you want to redistribute this email to the CD_Queue1 queue?')) {
                 return;
             }
 
@@ -747,11 +753,15 @@
             rowButton.textContent = '⏳ Updating...';
 
             try {
-                // Step 1: PATCH participant attributes to add userId and queueId to participant data
-                console.log(`Step 1: PATCH attributes for conversation ${conversationId}, participant ${participantId}`);
-                console.log(`Adding UserId: ${userId}, QueueId: ${queueId}`);
+                // Use workflow participant ID for PATCH if available, otherwise use regular participant ID
+                const targetParticipantId = workflowParticipantId !== 'N/A' ? workflowParticipantId : participantId;
                 
-                const patchResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/attributes`, {
+                // Step 1: PATCH participant attributes to add UserId, QueueId, and ForcedUnpark
+                console.log(`Step 1: PATCH attributes for conversation ${conversationId}`);
+                console.log(`Using workflow participant ID: ${targetParticipantId}`);
+                console.log(`Adding UserId: ${userId}, QueueId: ${queueId}, ForcedUnpark: 'true'`);
+                
+                const patchResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${targetParticipantId}/attributes`, {
                     method: 'PATCH',
                     headers: {
                         'Content-Type': 'application/json',
@@ -772,11 +782,11 @@
                     throw new Error(`Failed to update attributes: ${patchError.message || patchResponse.status}`);
                 }
 
-                console.log('✓ Participant attributes updated successfully');
+                console.log('✓ Participant attributes updated successfully (UserId, QueueId, ForcedUnpark)');
                 rowButton.textContent = '⏳ Transferring...';
 
-                // Step 2: Transfer to redistribution queue
-                console.log(`Step 2: Transferring to queue ${REDISTRIBUTE_QUEUE_NAME}`);
+                // Step 2: Transfer to redistribution queue using regular participant ID
+                console.log(`Step 2: Transferring to queue ${REDISTRIBUTE_QUEUE_NAME} using participant ${participantId}`);
                 
                 const transferResponse = await fetch(`${BASE_URL}/api/v2/conversations/${conversationId}/participants/${participantId}/replace/queue`, {
                     method: 'POST',
@@ -794,7 +804,7 @@
 
                 if (transferResponse.ok) {
                     console.log('✓ Email redistributed successfully');
-                    showStatus('✅ Email redistributed successfully! Attributes saved: UserId & QueueId', 'success');
+                    showStatus('✅ Email redistributed! Attributes saved: UserId, QueueId, ForcedUnpark=true', 'success');
                     rowButton.textContent = '✓ Done';
                     rowButton.style.background = '#28a745';
                     
