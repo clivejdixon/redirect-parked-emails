@@ -247,7 +247,7 @@
 <body>
     <!-- Version Display - Bottom Left -->
     <div class="version-display">
-        <strong>Version:</strong> v2.25 | <strong>Updated:</strong> 2026-03-02 14:15 UTC
+        <strong>Version:</strong> v2.27 | <strong>Updated:</strong> 2026-03-02 14:45 UTC
     </div>
 
     <div class="container">
@@ -299,15 +299,13 @@
 
         // Configuration
         const CLIENT_ID = 'e1f0834d-492c-40ff-9446-85e5e521eff4'; // Add your Client ID here
-        const REDISTRIBUTE_WORKFLOW_NAME = 'CD_Email';
-        const REDISTRIBUTE_WORKFLOW_ID = '157d2515-7c9b-45fb-b428-91592d57d75b';
 
         window.onload = function() {
             const currentUrl = window.location.href;
             const redirectUri = window.location.origin + window.location.pathname;
             
             console.log('=== CONFIGURATION INFO ===');
-            console.log('Version: v2.25 - 2026-03-02 14:15 UTC');
+            console.log('Version: v2.27 - 2026-03-02 14:45 UTC');
             console.log('Current URL:', currentUrl);
             console.log('Redirect URI:', redirectUri);
             console.log('Client ID:', CLIENT_ID || 'NOT SET');
@@ -577,6 +575,7 @@
             conversations.forEach(conv => {
                 let lastParticipantId = null;
                 let lastWorkflowParticipantId = null;
+                let acdQueueId = null;
                 
                 conv.participants?.forEach(participant => {
                     // Track last participant ID
@@ -587,6 +586,17 @@
                     // Track last workflow participant ID
                     if (participant.purpose === 'workflow' && participant.participantId) {
                         lastWorkflowParticipantId = participant.participantId;
+                    }
+                    
+                    // Track ACD queue ID from participant with purpose 'acd'
+                    if (participant.purpose === 'acd') {
+                        participant.sessions?.forEach(session => {
+                            session.segments?.forEach(segment => {
+                                if (segment.queueId) {
+                                    acdQueueId = segment.queueId;
+                                }
+                            });
+                        });
                     }
                     
                     participant.sessions?.forEach(session => {
@@ -613,6 +623,7 @@
                                         workflowParticipantId: lastWorkflowParticipantId || lastParticipantId || participant.participantId || 'N/A',
                                         userId: participant.userId || 'N/A',
                                         queueId: segment.queueId,
+                                        acdQueueId: acdQueueId || segment.queueId, // Use ACD queue if found, otherwise current queue
                                         segmentStart: segment.segmentStart,
                                         expirationDate: expirationDate.toLocaleString(),
                                         addressFrom: session.addressFrom || 'N/A',
@@ -708,7 +719,7 @@
                         <td style="white-space: nowrap;">${item.expirationDate}</td>
                         <td>
                             <button id="${buttonId}" class="redistribute-btn" 
-                                onclick="redistributeEmail('${item.conversationId}', '${item.participantId}', '${item.workflowParticipantId}', '${item.userId}', '${item.queueId}', document.getElementById('${buttonId}'))">
+                                onclick="redistributeEmail('${item.conversationId}', '${item.participantId}', '${item.workflowParticipantId}', '${item.userId}', '${item.queueId}', '${item.acdQueueId}', document.getElementById('${buttonId}'))">
                                 ↻ Redistribute
                             </button>
                         </td>
@@ -744,8 +755,8 @@
             toggleBtn.textContent = showIds ? '👁️ Hide IDs' : '👁️ Show IDs';
         }
 
-        async function redistributeEmail(conversationId, participantId, workflowParticipantId, userId, queueId, rowButton) {
-            if (!confirm('Are you sure you want to redistribute this email? It will be re-routed through the inbound email flow (preferred agent → CD_Email queue).')) {
+        async function redistributeEmail(conversationId, participantId, workflowParticipantId, userId, queueId, acdQueueId, rowButton) {
+            if (!confirm('Are you sure you want to redistribute this email? It will route to the preferred agent (UserId), then to the original queue if agent unavailable.')) {
                 return;
             }
 
@@ -783,33 +794,35 @@
                 }
 
                 console.log('✓ Participant attributes updated successfully (UserId, QueueId, ForcedUnpark)');
-                rowButton.textContent = '⏳ Disconnecting to re-route...';
+                rowButton.textContent = '⏳ Transferring to ACD...';
 
-                // Step 2: Disconnect the participant to force re-routing through inbound email flow
-                console.log(`Step 2: Disconnecting participant ${participantId} to trigger inbound email flow re-routing`);
+                // Step 2: Transfer to ACD queue (from conversation data)
+                console.log(`Step 2: Transferring to ACD queue ${acdQueueId} using participant ${participantId}`);
+                console.log('Queue routing will handle: Preferred Agent → Queue distribution');
                 
-                const disconnectResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}`, {
-                    method: 'PATCH',
+                const transferResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/replace`, {
+                    method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${accessToken}`
                     },
                     body: JSON.stringify({
-                        state: 'disconnected'
+                        queueId: acdQueueId,
+                        voicemail: false
                     })
                 });
 
-                if (disconnectResponse.ok) {
-                    console.log('✓ Participant disconnected - email will be re-routed through inbound flow');
-                    showStatus('✅ Email released for re-routing! Will attempt preferred agent (UserId), then CD_Email queue. Attributes saved: UserId, QueueId, ForcedUnpark=true', 'success');
+                if (transferResponse.ok) {
+                    console.log('✓ Email transferred to ACD queue - routing to preferred agent or queue');
+                    showStatus(`✅ Email transferred to queue! Routing: Preferred Agent (${userId}) → Queue. Attributes: UserId, QueueId, ForcedUnpark=true`, 'success');
                     rowButton.textContent = '✓ Done';
                     rowButton.style.background = '#28a745';
                     
                     setTimeout(() => queryConversations(), 3000);
                 } else {
-                    const disconnectError = await disconnectResponse.json().catch(() => ({}));
-                    console.error('Disconnect failed:', disconnectError);
-                    throw new Error(disconnectError.message || `Disconnect failed: ${disconnectResponse.status}`);
+                    const transferError = await transferResponse.json().catch(() => ({}));
+                    console.error('Transfer to ACD failed:', transferError);
+                    throw new Error(transferError.message || `Transfer failed: ${transferResponse.status}`);
                 }
             } catch (error) {
                 console.error('Redistribution error:', error);
