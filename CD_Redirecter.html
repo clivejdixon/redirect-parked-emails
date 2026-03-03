@@ -247,7 +247,7 @@
 <body>
     <!-- Version Display - Bottom Left -->
     <div class="version-display">
-        <strong>Version:</strong> v2.23 | <strong>Updated:</strong> 2026-03-02 13:45 UTC
+        <strong>Version:</strong> v2.24 | <strong>Updated:</strong> 2026-03-02 14:00 UTC
     </div>
 
     <div class="container">
@@ -307,7 +307,7 @@
             const redirectUri = window.location.origin + window.location.pathname;
             
             console.log('=== CONFIGURATION INFO ===');
-            console.log('Version: v2.23 - 2026-03-02 13:45 UTC');
+            console.log('Version: v2.24 - 2026-03-02 14:00 UTC');
             console.log('Current URL:', currentUrl);
             console.log('Redirect URI:', redirectUri);
             console.log('Client ID:', CLIENT_ID || 'NOT SET');
@@ -783,35 +783,39 @@
                 }
 
                 console.log('✓ Participant attributes updated successfully (UserId, QueueId, ForcedUnpark)');
-                rowButton.textContent = '⏳ Transferring to workflow...';
+                rowButton.textContent = '⏳ Executing workflow...';
 
-                // Step 2: Transfer to workflow using regular participant ID
-                console.log(`Step 2: Transferring to workflow ${REDISTRIBUTE_WORKFLOW_NAME} (${REDISTRIBUTE_WORKFLOW_ID}) using participant ${participantId}`);
+                // Step 2: Execute the workflow
+                console.log(`Step 2: Executing workflow ${REDISTRIBUTE_WORKFLOW_NAME} (${REDISTRIBUTE_WORKFLOW_ID}) for conversation ${conversationId}`);
                 
-                const transferResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}`, {
-                    method: 'PATCH',
+                const workflowResponse = await fetch(`${BASE_URL}/api/v2/flows/executions`, {
+                    method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${accessToken}`
                     },
                     body: JSON.stringify({
-                        wrapup: {
-                            code: REDISTRIBUTE_WORKFLOW_ID
+                        flowId: REDISTRIBUTE_WORKFLOW_ID,
+                        flowVersion: 'latest',
+                        inputData: {
+                            conversationId: conversationId,
+                            participantId: participantId
                         }
                     })
                 });
 
-                if (transferResponse.ok) {
-                    console.log('✓ Email transferred to workflow successfully');
+                if (workflowResponse.ok) {
+                    const workflowData = await workflowResponse.json();
+                    console.log('✓ Workflow executed successfully:', workflowData);
                     showStatus('✅ Email redistributed to CD_Email workflow! Attributes saved: UserId, QueueId, ForcedUnpark=true', 'success');
                     rowButton.textContent = '✓ Done';
                     rowButton.style.background = '#28a745';
                     
                     setTimeout(() => queryConversations(), 2000);
                 } else {
-                    const transferError = await transferResponse.json().catch(() => ({}));
-                    console.error('Workflow transfer failed:', transferError);
-                    throw new Error(transferError.message || `Workflow transfer failed: ${transferResponse.status}`);
+                    const workflowError = await workflowResponse.json().catch(() => ({}));
+                    console.error('Workflow execution failed:', workflowError);
+                    throw new Error(workflowError.message || `Workflow execution failed: ${workflowResponse.status}`);
                 }
             } catch (error) {
                 console.error('Redistribution error:', error);
