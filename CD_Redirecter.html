@@ -247,7 +247,7 @@
 <body>
     <!-- Version Display - Bottom Left -->
     <div class="version-display">
-        <strong>Version:</strong> v2.24 | <strong>Updated:</strong> 2026-03-02 14:00 UTC
+        <strong>Version:</strong> v2.25 | <strong>Updated:</strong> 2026-03-02 14:15 UTC
     </div>
 
     <div class="container">
@@ -307,7 +307,7 @@
             const redirectUri = window.location.origin + window.location.pathname;
             
             console.log('=== CONFIGURATION INFO ===');
-            console.log('Version: v2.24 - 2026-03-02 14:00 UTC');
+            console.log('Version: v2.25 - 2026-03-02 14:15 UTC');
             console.log('Current URL:', currentUrl);
             console.log('Redirect URI:', redirectUri);
             console.log('Client ID:', CLIENT_ID || 'NOT SET');
@@ -745,7 +745,7 @@
         }
 
         async function redistributeEmail(conversationId, participantId, workflowParticipantId, userId, queueId, rowButton) {
-            if (!confirm('Are you sure you want to redistribute this email to the CD_Email workflow?')) {
+            if (!confirm('Are you sure you want to redistribute this email? It will be re-routed through the inbound email flow (preferred agent → CD_Email queue).')) {
                 return;
             }
 
@@ -783,39 +783,33 @@
                 }
 
                 console.log('✓ Participant attributes updated successfully (UserId, QueueId, ForcedUnpark)');
-                rowButton.textContent = '⏳ Executing workflow...';
+                rowButton.textContent = '⏳ Disconnecting to re-route...';
 
-                // Step 2: Execute the workflow
-                console.log(`Step 2: Executing workflow ${REDISTRIBUTE_WORKFLOW_NAME} (${REDISTRIBUTE_WORKFLOW_ID}) for conversation ${conversationId}`);
+                // Step 2: Disconnect the participant to force re-routing through inbound email flow
+                console.log(`Step 2: Disconnecting participant ${participantId} to trigger inbound email flow re-routing`);
                 
-                const workflowResponse = await fetch(`${BASE_URL}/api/v2/flows/executions`, {
-                    method: 'POST',
+                const disconnectResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}`, {
+                    method: 'PATCH',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${accessToken}`
                     },
                     body: JSON.stringify({
-                        flowId: REDISTRIBUTE_WORKFLOW_ID,
-                        flowVersion: 'latest',
-                        inputData: {
-                            conversationId: conversationId,
-                            participantId: participantId
-                        }
+                        state: 'disconnected'
                     })
                 });
 
-                if (workflowResponse.ok) {
-                    const workflowData = await workflowResponse.json();
-                    console.log('✓ Workflow executed successfully:', workflowData);
-                    showStatus('✅ Email redistributed to CD_Email workflow! Attributes saved: UserId, QueueId, ForcedUnpark=true', 'success');
+                if (disconnectResponse.ok) {
+                    console.log('✓ Participant disconnected - email will be re-routed through inbound flow');
+                    showStatus('✅ Email released for re-routing! Will attempt preferred agent (UserId), then CD_Email queue. Attributes saved: UserId, QueueId, ForcedUnpark=true', 'success');
                     rowButton.textContent = '✓ Done';
                     rowButton.style.background = '#28a745';
                     
-                    setTimeout(() => queryConversations(), 2000);
+                    setTimeout(() => queryConversations(), 3000);
                 } else {
-                    const workflowError = await workflowResponse.json().catch(() => ({}));
-                    console.error('Workflow execution failed:', workflowError);
-                    throw new Error(workflowError.message || `Workflow execution failed: ${workflowResponse.status}`);
+                    const disconnectError = await disconnectResponse.json().catch(() => ({}));
+                    console.error('Disconnect failed:', disconnectError);
+                    throw new Error(disconnectError.message || `Disconnect failed: ${disconnectResponse.status}`);
                 }
             } catch (error) {
                 console.error('Redistribution error:', error);
