@@ -247,7 +247,7 @@
 <body>
     <!-- Version Display - Bottom Left -->
     <div class="version-display">
-        <strong>Version:</strong> v2.30 | <strong>Updated:</strong> 2026-03-02 15:30 UTC
+        <strong>Version:</strong> v2.31 | <strong>Updated:</strong> 2026-03-02 15:45 UTC
     </div>
 
     <div class="container">
@@ -305,7 +305,7 @@
             const redirectUri = window.location.origin + window.location.pathname;
             
             console.log('=== CONFIGURATION INFO ===');
-            console.log('Version: v2.30 - 2026-03-02 15:30 UTC');
+            console.log('Version: v2.31 - 2026-03-02 15:45 UTC');
             console.log('Current URL:', currentUrl);
             console.log('Redirect URI:', redirectUri);
             console.log('Client ID:', CLIENT_ID || 'NOT SET');
@@ -825,31 +825,31 @@
 
                 // Step 3: Route based on agent status
                 if (routeToAgent) {
-                    // Route to agent using /replace endpoint with userId
-                    console.log(`Step 3: Routing to agent ${userId} (status: ${agentStatus})`);
-                    rowButton.textContent = '⏳ Routing to agent...';
+                    // Unpark the email (agent is already participant, can't transfer to them)
+                    console.log(`Step 3: Unparking email for agent ${userId} (status: ${agentStatus})`);
+                    rowButton.textContent = '⏳ Unparking...';
                     
-                    const transferResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/replace`, {
-                        method: 'POST',
+                    const unparkResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}`, {
+                        method: 'PATCH',
                         headers: {
                             'Content-Type': 'application/json',
                             'Authorization': `Bearer ${accessToken}`
                         },
                         body: JSON.stringify({
-                            userId: userId
+                            state: 'alerting'
                         })
                     });
 
-                    if (transferResponse.ok) {
-                        console.log(`✓ Email routed to agent ${userId}`);
-                        showStatus(`✅ Email routed to agent! Status: ${agentStatus}. Attributes saved: UserId, QueueId, ForcedUnpark=true`, 'success');
-                        rowButton.textContent = '✓ → Agent';
+                    if (unparkResponse.ok) {
+                        console.log(`✓ Email unparked for agent ${userId}`);
+                        showStatus(`✅ Email unparked for agent! Status: ${agentStatus}. Attributes saved: UserId, QueueId, ForcedUnpark=true`, 'success');
+                        rowButton.textContent = '✓ Unparked';
                         rowButton.style.background = '#28a745';
                         setTimeout(() => queryConversations(), 3000);
                     } else {
-                        const transferError = await transferResponse.json().catch(() => ({}));
-                        console.error('Transfer to agent failed:', transferError);
-                        throw new Error(transferError.message || `Agent transfer failed: ${transferResponse.status}`);
+                        const unparkError = await unparkResponse.json().catch(() => ({}));
+                        console.error('Unpark failed:', unparkError);
+                        throw new Error(unparkError.message || `Unpark failed: ${unparkResponse.status}`);
                     }
                 } else {
                     // Route to queue using /replace endpoint
