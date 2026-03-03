@@ -247,7 +247,7 @@
 <body>
     <!-- Version Display - Bottom Left -->
     <div class="version-display">
-        <strong>Version:</strong> v2.29 | <strong>Updated:</strong> 2026-03-02 15:15 UTC
+        <strong>Version:</strong> v2.30 | <strong>Updated:</strong> 2026-03-02 15:30 UTC
     </div>
 
     <div class="container">
@@ -305,7 +305,7 @@
             const redirectUri = window.location.origin + window.location.pathname;
             
             console.log('=== CONFIGURATION INFO ===');
-            console.log('Version: v2.29 - 2026-03-02 15:15 UTC');
+            console.log('Version: v2.30 - 2026-03-02 15:30 UTC');
             console.log('Current URL:', currentUrl);
             console.log('Redirect URI:', redirectUri);
             console.log('Client ID:', CLIENT_ID || 'NOT SET');
@@ -825,11 +825,11 @@
 
                 // Step 3: Route based on agent status
                 if (routeToAgent) {
-                    // Route to agent using /replace/agent endpoint
+                    // Route to agent using /replace endpoint with userId
                     console.log(`Step 3: Routing to agent ${userId} (status: ${agentStatus})`);
                     rowButton.textContent = '⏳ Routing to agent...';
                     
-                    const transferResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/replace/agent`, {
+                    const transferResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/replace`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
