@@ -247,7 +247,7 @@
 <body>
     <!-- Version Display - Bottom Left -->
     <div class="version-display">
-        <strong>Version:</strong> v2.22 | <strong>Updated:</strong> 2026-03-02 13:30 UTC
+        <strong>Version:</strong> v2.23 | <strong>Updated:</strong> 2026-03-02 13:45 UTC
     </div>
 
     <div class="container">
@@ -299,15 +299,15 @@
 
         // Configuration
         const CLIENT_ID = 'e1f0834d-492c-40ff-9446-85e5e521eff4'; // Add your Client ID here
-        const REDISTRIBUTE_QUEUE_NAME = 'CD_Queue1';
-        const REDISTRIBUTE_QUEUE_ID = '50099ff1-bb3e-42af-9560-b02fd10a762e';
+        const REDISTRIBUTE_WORKFLOW_NAME = 'CD_Email';
+        const REDISTRIBUTE_WORKFLOW_ID = '157d2515-7c9b-45fb-b428-91592d57d75b';
 
         window.onload = function() {
             const currentUrl = window.location.href;
             const redirectUri = window.location.origin + window.location.pathname;
             
             console.log('=== CONFIGURATION INFO ===');
-            console.log('Version: v2.22 - 2026-03-02 13:30 UTC');
+            console.log('Version: v2.23 - 2026-03-02 13:45 UTC');
             console.log('Current URL:', currentUrl);
             console.log('Redirect URI:', redirectUri);
             console.log('Client ID:', CLIENT_ID || 'NOT SET');
@@ -745,7 +745,7 @@
         }
 
         async function redistributeEmail(conversationId, participantId, workflowParticipantId, userId, queueId, rowButton) {
-            if (!confirm('Are you sure you want to redistribute this email to the CD_Queue1 queue?')) {
+            if (!confirm('Are you sure you want to redistribute this email to the CD_Email workflow?')) {
                 return;
             }
 
@@ -783,36 +783,35 @@
                 }
 
                 console.log('✓ Participant attributes updated successfully (UserId, QueueId, ForcedUnpark)');
-                rowButton.textContent = '⏳ Transferring...';
+                rowButton.textContent = '⏳ Transferring to workflow...';
 
-                // Step 2: Transfer to redistribution queue using regular participant ID
-                console.log(`Step 2: Transferring to queue ${REDISTRIBUTE_QUEUE_NAME} using participant ${participantId}`);
+                // Step 2: Transfer to workflow using regular participant ID
+                console.log(`Step 2: Transferring to workflow ${REDISTRIBUTE_WORKFLOW_NAME} (${REDISTRIBUTE_WORKFLOW_ID}) using participant ${participantId}`);
                 
-                const transferResponse = await fetch(`${BASE_URL}/api/v2/conversations/${conversationId}/participants/${participantId}/replace/queue`, {
-                    method: 'POST',
+                const transferResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}`, {
+                    method: 'PATCH',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${accessToken}`
                     },
                     body: JSON.stringify({
-                        transferType: 'Unattended',
-                        keepInternalMessageAlive: true,
-                        queueName: REDISTRIBUTE_QUEUE_NAME,
-                        queueId: REDISTRIBUTE_QUEUE_ID
+                        wrapup: {
+                            code: REDISTRIBUTE_WORKFLOW_ID
+                        }
                     })
                 });
 
                 if (transferResponse.ok) {
-                    console.log('✓ Email redistributed successfully');
-                    showStatus('✅ Email redistributed! Attributes saved: UserId, QueueId, ForcedUnpark=true', 'success');
+                    console.log('✓ Email transferred to workflow successfully');
+                    showStatus('✅ Email redistributed to CD_Email workflow! Attributes saved: UserId, QueueId, ForcedUnpark=true', 'success');
                     rowButton.textContent = '✓ Done';
                     rowButton.style.background = '#28a745';
                     
                     setTimeout(() => queryConversations(), 2000);
                 } else {
                     const transferError = await transferResponse.json().catch(() => ({}));
-                    console.error('Transfer failed:', transferError);
-                    throw new Error(transferError.message || `Transfer failed: ${transferResponse.status}`);
+                    console.error('Workflow transfer failed:', transferError);
+                    throw new Error(transferError.message || `Workflow transfer failed: ${transferResponse.status}`);
                 }
             } catch (error) {
                 console.error('Redistribution error:', error);
