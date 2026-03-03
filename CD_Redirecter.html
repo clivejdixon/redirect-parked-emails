@@ -299,15 +299,17 @@
 
         // Configuration
         const CLIENT_ID = 'e1f0834d-492c-40ff-9446-85e5e521eff4'; // Add your Client ID here
-        const REDISTRIBUTE_QUEUE_NAME = 'CD_RedistributeEmails';
-        const REDISTRIBUTE_QUEUE_ID = '3e47e701-fb9e-4682-b278-47c3252f4f39';
+       // const REDISTRIBUTE_QUEUE_NAME = 'CD_RedistributeEmails';
+       // const REDISTRIBUTE_QUEUE_ID = '3e47e701-fb9e-4682-b278-47c3252f4f39';
+        const REDISTRIBUTE_QUEUE_NAME = 'CD_Queue1';
+        const REDISTRIBUTE_QUEUE_ID = '50099ff1-bb3e-42af-9560-b02fd10a762e';
 
         window.onload = function() {
             const currentUrl = window.location.href;
             const redirectUri = window.location.origin + window.location.pathname;
             
             console.log('=== CONFIGURATION INFO ===');
-            console.log('Version: v2.2.0 - 2026-03-02 13:15 UTC');
+            console.log('Version: v2.2.1 - 2026-03-02 13:15 UTC');
             console.log('Current URL:', currentUrl);
             console.log('Redirect URI:', redirectUri);
             console.log('Client ID:', CLIENT_ID || 'NOT SET');
@@ -758,7 +760,8 @@
                     body: JSON.stringify({
                         attributes: {
                             UserId: userId,
-                            QueueId: queueId
+                            QueueId: queueId,
+                            ForcedUnpark: 'true'
                         }
                     })
                 });
