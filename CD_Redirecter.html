@@ -247,7 +247,7 @@
 <body>
     <!-- Version Display - Bottom Left -->
     <div class="version-display">
-        <strong>Version:</strong> v2.27 | <strong>Updated:</strong> 2026-03-02 14:45 UTC
+        <strong>Version:</strong> v2.28 | <strong>Updated:</strong> 2026-03-02 15:00 UTC
     </div>
 
     <div class="container">
@@ -299,15 +299,13 @@
 
         // Configuration
         const CLIENT_ID = 'e1f0834d-492c-40ff-9446-85e5e521eff4'; // Add your Client ID here
-        const REDISTRIBUTE_QUEUE_NAME = 'CD_RedistributeEmails';
-        const REDISTRIBUTE_QUEUE_ID = '3e47e701-fb9e-4682-b278-47c3252f4f39';
-        
+
         window.onload = function() {
             const currentUrl = window.location.href;
             const redirectUri = window.location.origin + window.location.pathname;
             
             console.log('=== CONFIGURATION INFO ===');
-            console.log('Version: v2.27 - 2026-03-02 14:45 UTC');
+            console.log('Version: v2.28 - 2026-03-02 15:00 UTC');
             console.log('Current URL:', currentUrl);
             console.log('Redirect URI:', redirectUri);
             console.log('Client ID:', CLIENT_ID || 'NOT SET');
@@ -758,12 +756,12 @@
         }
 
         async function redistributeEmail(conversationId, participantId, workflowParticipantId, userId, queueId, acdQueueId, rowButton) {
-            if (!confirm('Are you sure you want to redistribute this email? It will route to the preferred agent (UserId), then to the original queue if agent unavailable.')) {
+            if (!confirm('Are you sure you want to redistribute this email? It will check agent availability and route accordingly.')) {
                 return;
             }
 
             rowButton.disabled = true;
-            rowButton.textContent = '⏳ Updating...';
+            rowButton.textContent = '⏳ Checking agent...';
 
             try {
                 // Use workflow participant ID for PATCH if available, otherwise use regular participant ID
@@ -796,35 +794,92 @@
                 }
 
                 console.log('✓ Participant attributes updated successfully (UserId, QueueId, ForcedUnpark)');
-                rowButton.textContent = '⏳ Transferring to ACD...';
-
-                // Step 2: Transfer to ACD queue (from conversation data)
-                console.log(`Step 2: Transferring to ACD queue ${acdQueueId} using participant ${participantId}`);
-                console.log('Queue routing will handle: Preferred Agent → Queue distribution');
                 
-                const transferResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/replace`, {
-                    method: 'POST',
+                // Step 2: Check agent routing status
+                console.log(`Step 2: Checking routing status for user ${userId}`);
+                rowButton.textContent = '⏳ Checking status...';
+                
+                const statusResponse = await fetch(`${BASE_URL}/api/v2/users/${userId}/routingstatus`, {
                     headers: {
-                        'Content-Type': 'application/json',
                         'Authorization': `Bearer ${accessToken}`
-                    },
-                    body: JSON.stringify({
-                        queueId: acdQueueId,
-                        voicemail: false
-                    })
+                    }
                 });
 
-                if (transferResponse.ok) {
-                    console.log('✓ Email transferred to ACD queue - routing to preferred agent or queue');
-                    showStatus(`✅ Email transferred to queue! Routing: Preferred Agent (${userId}) → Queue. Attributes: UserId, QueueId, ForcedUnpark=true`, 'success');
-                    rowButton.textContent = '✓ Done';
-                    rowButton.style.background = '#28a745';
+                let routeToAgent = false;
+                let agentStatus = 'unknown';
+                
+                if (statusResponse.ok) {
+                    const statusData = await statusResponse.json();
+                    agentStatus = statusData.status ? statusData.status.toLowerCase() : 'unknown';
+                    console.log(`Agent routing status: ${agentStatus}`);
                     
-                    setTimeout(() => queryConversations(), 3000);
+                    // Check if status is one of: idle, communicating, interacting, not_responding
+                    const availableStatuses = ['idle', 'communicating', 'interacting', 'not_responding'];
+                    routeToAgent = availableStatuses.includes(agentStatus);
+                    
+                    console.log(`Route to agent: ${routeToAgent}`);
                 } else {
-                    const transferError = await transferResponse.json().catch(() => ({}));
-                    console.error('Transfer to ACD failed:', transferError);
-                    throw new Error(transferError.message || `Transfer failed: ${transferResponse.status}`);
+                    console.warn('Could not fetch agent status, defaulting to queue routing');
+                    routeToAgent = false;
+                }
+
+                // Step 3: Route based on agent status
+                if (routeToAgent) {
+                    // Route to agent
+                    console.log(`Step 3: Routing to agent ${userId} (status: ${agentStatus})`);
+                    rowButton.textContent = '⏳ Routing to agent...';
+                    
+                    const transferResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/replace`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${accessToken}`
+                        },
+                        body: JSON.stringify({
+                            userId: userId,
+                            voicemail: false
+                        })
+                    });
+
+                    if (transferResponse.ok) {
+                        console.log(`✓ Email routed to agent ${userId}`);
+                        showStatus(`✅ Email routed to agent! Status: ${agentStatus}. Attributes saved: UserId, QueueId, ForcedUnpark=true`, 'success');
+                        rowButton.textContent = '✓ → Agent';
+                        rowButton.style.background = '#28a745';
+                        setTimeout(() => queryConversations(), 3000);
+                    } else {
+                        const transferError = await transferResponse.json().catch(() => ({}));
+                        console.error('Transfer to agent failed:', transferError);
+                        throw new Error(transferError.message || `Agent transfer failed: ${transferResponse.status}`);
+                    }
+                } else {
+                    // Route to queue
+                    console.log(`Step 3: Routing to queue ${queueId} (agent status: ${agentStatus})`);
+                    rowButton.textContent = '⏳ Routing to queue...';
+                    
+                    const transferResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/replace`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${accessToken}`
+                        },
+                        body: JSON.stringify({
+                            queueId: queueId,
+                            voicemail: false
+                        })
+                    });
+
+                    if (transferResponse.ok) {
+                        console.log(`✓ Email routed to queue ${queueId}`);
+                        showStatus(`✅ Email routed to queue! Agent status: ${agentStatus}. Attributes saved: UserId, QueueId, ForcedUnpark=true`, 'success');
+                        rowButton.textContent = '✓ → Queue';
+                        rowButton.style.background = '#ffc107';
+                        setTimeout(() => queryConversations(), 3000);
+                    } else {
+                        const transferError = await transferResponse.json().catch(() => ({}));
+                        console.error('Transfer to queue failed:', transferError);
+                        throw new Error(transferError.message || `Queue transfer failed: ${transferResponse.status}`);
+                    }
                 }
             } catch (error) {
                 console.error('Redistribution error:', error);
