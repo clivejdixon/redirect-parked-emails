@@ -247,7 +247,7 @@
 <body>
     <!-- Version Display - Bottom Left -->
     <div class="version-display">
-        <strong>Version:</strong> v2.32 | <strong>Updated:</strong> 2026-03-02 16:00 UTC
+        <strong>Version:</strong> v2.34 | <strong>Updated:</strong> 2026-03-02 16:30 UTC
     </div>
 
     <div class="container">
@@ -305,7 +305,7 @@
             const redirectUri = window.location.origin + window.location.pathname;
             
             console.log('=== CONFIGURATION INFO ===');
-            console.log('Version: v2.32 - 2026-03-02 16:00 UTC');
+            console.log('Version: v2.34 - 2026-03-02 16:30 UTC');
             console.log('Current URL:', currentUrl);
             console.log('Redirect URI:', redirectUri);
             console.log('Client ID:', CLIENT_ID || 'NOT SET');
@@ -756,12 +756,12 @@
         }
 
         async function redistributeEmail(conversationId, participantId, workflowParticipantId, userId, queueId, acdQueueId, rowButton) {
-            if (!confirm('Are you sure you want to redistribute this email? It will check agent availability and route accordingly.')) {
+            if (!confirm('Are you sure you want to redistribute this email back to the queue? Queue routing will attempt to send to the original agent.')) {
                 return;
             }
 
             rowButton.disabled = true;
-            rowButton.textContent = '⏳ Checking agent...';
+            rowButton.textContent = '⏳ Updating...';
 
             try {
                 // Use workflow participant ID for PATCH if available, otherwise use regular participant ID
@@ -824,57 +824,34 @@
                 }
 
                 // Step 3: Route based on agent status
+
+                // Step 3: Route based on agent status
                 if (routeToAgent) {
-                    // Disconnect current participant then add agent back
-                    console.log(`Step 3: Disconnecting participant then re-alerting to agent ${userId} (status: ${agentStatus})`);
-                    rowButton.textContent = '⏳ Disconnecting...';
+                    // Try using the parkingstate endpoint to unpark
+                    console.log(`Step 3: Unparking email for agent ${userId} using /parkingstate endpoint (status: ${agentStatus})`);
+                    rowButton.textContent = '⏳ Unparking...';
                     
-                    // First, disconnect the current participant
-                    const disconnectResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}`, {
+                    const unparkResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/parkingstate`, {
                         method: 'PATCH',
                         headers: {
                             'Content-Type': 'application/json',
                             'Authorization': `Bearer ${accessToken}`
                         },
                         body: JSON.stringify({
-                            state: 'disconnected'
+                            state: 'alerting'
                         })
                     });
 
-                    if (!disconnectResponse.ok) {
-                        const disconnectError = await disconnectResponse.json().catch(() => ({}));
-                        console.error('Disconnect failed:', disconnectError);
-                        throw new Error(disconnectError.message || `Disconnect failed: ${disconnectResponse.status}`);
-                    }
-
-                    console.log('✓ Participant disconnected');
-                    rowButton.textContent = '⏳ Re-alerting...';
-                    
-                    // Wait a moment for disconnect to process
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    
-                    // Then add the agent back
-                    const addAgentResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${accessToken}`
-                        },
-                        body: JSON.stringify({
-                            userId: userId
-                        })
-                    });
-
-                    if (addAgentResponse.ok) {
-                        console.log(`✓ Email re-alerted to agent ${userId}`);
-                        showStatus(`✅ Email sent back to agent! Status: ${agentStatus}. Attributes saved: UserId, QueueId, ForcedUnpark=true`, 'success');
-                        rowButton.textContent = '✓ → Agent';
+                    if (unparkResponse.ok) {
+                        console.log(`✓ Email unparked for agent ${userId} using parkingstate endpoint`);
+                        showStatus(`✅ Email unparked for agent! Status: ${agentStatus}. Attributes: UserId, QueueId, ForcedUnpark=true`, 'success');
+                        rowButton.textContent = '✓ Unparked';
                         rowButton.style.background = '#28a745';
                         setTimeout(() => queryConversations(), 3000);
                     } else {
-                        const addError = await addAgentResponse.json().catch(() => ({}));
-                        console.error('Add agent failed:', addError);
-                        throw new Error(addError.message || `Add agent failed: ${addAgentResponse.status}`);
+                        const unparkError = await unparkResponse.json().catch(() => ({}));
+                        console.error('Unpark via parkingstate failed:', unparkError);
+                        throw new Error(unparkError.message || `Unpark failed: ${unparkResponse.status}`);
                     }
                 } else {
                     // Route to queue using /replace endpoint
