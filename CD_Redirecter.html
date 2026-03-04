@@ -299,9 +299,11 @@
 
         // Configuration
         const CLIENT_ID = 'e1f0834d-492c-40ff-9446-85e5e521eff4'; // Add your Client ID here
+        
+        // Redistribution queue configuration
         const REDISTRIBUTE_QUEUE_NAME = 'CD_RedistributeEmails';
         const REDISTRIBUTE_QUEUE_ID = '3e47e701-fb9e-4682-b278-47c3252f4f39';
-        
+
         window.onload = function() {
             const currentUrl = window.location.href;
             const redirectUri = window.location.origin + window.location.pathname;
@@ -856,8 +858,8 @@
                         throw new Error(unparkError.message || `Unpark failed: ${unparkResponse.status}`);
                     }
                 } else {
-                    // Route to queue using /replace endpoint
-                    console.log(`Step 3: Routing to queue ${queueId} (agent status: ${agentStatus})`);
+                    // Route to CD_RedistributeEmails queue
+                    console.log(`Step 3: Routing to ${REDISTRIBUTE_QUEUE_NAME} queue (${REDISTRIBUTE_QUEUE_ID}) - agent status: ${agentStatus}`);
                     rowButton.textContent = '⏳ Routing to queue...';
                     
                     const transferResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/replace`, {
@@ -867,15 +869,15 @@
                             'Authorization': `Bearer ${accessToken}`
                         },
                         body: JSON.stringify({
-                            queueId: queueId
+                            queueId: REDISTRIBUTE_QUEUE_ID
                         })
                     });
 
                     if (transferResponse.ok) {
-                        console.log(`✓ Email routed to queue ${queueId}`);
-                        showStatus(`✅ Email routed to queue! Agent status: ${agentStatus}. Attributes saved: UserId, QueueId, ForcedUnpark=true`, 'success');
-                        rowButton.textContent = '✓ → Queue';
-                        rowButton.style.background = '#ffc107';
+                        console.log(`✓ Email routed to ${REDISTRIBUTE_QUEUE_NAME} queue`);
+                        showStatus(`✅ Email sent to ${REDISTRIBUTE_QUEUE_NAME}! Attributes: UserId, QueueId, ForcedUnpark=true. In-queue flow will handle routing.`, 'success');
+                        rowButton.textContent = '✓ Redistributed';
+                        rowButton.style.background = '#28a745';
                         setTimeout(() => queryConversations(), 3000);
                     } else {
                         const transferError = await transferResponse.json().catch(() => ({}));
