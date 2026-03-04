@@ -247,7 +247,7 @@
 <body>
     <!-- Version Display - Bottom Left -->
     <div class="version-display">
-        <strong>Version:</strong> v2.34 | <strong>Updated:</strong> 2026-03-02 16:30 UTC
+        <strong>Version:</strong> v2.35-FINAL | <strong>Updated:</strong> 2026-03-02 16:45 UTC
     </div>
 
     <div class="container">
@@ -299,13 +299,15 @@
 
         // Configuration
         const CLIENT_ID = 'e1f0834d-492c-40ff-9446-85e5e521eff4'; // Add your Client ID here
-
+        const REDISTRIBUTE_QUEUE_NAME = 'CD_RedistributeEmails';
+        const REDISTRIBUTE_QUEUE_ID = '3e47e701-fb9e-4682-b278-47c3252f4f39';
+        
         window.onload = function() {
             const currentUrl = window.location.href;
             const redirectUri = window.location.origin + window.location.pathname;
             
             console.log('=== CONFIGURATION INFO ===');
-            console.log('Version: v2.34 - 2026-03-02 16:30 UTC');
+            console.log('Version: v2.35-FINAL - 2026-03-02 16:45 UTC');
             console.log('Current URL:', currentUrl);
             console.log('Redirect URI:', redirectUri);
             console.log('Client ID:', CLIENT_ID || 'NOT SET');
