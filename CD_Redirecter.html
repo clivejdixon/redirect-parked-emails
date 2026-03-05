@@ -247,7 +247,7 @@
 <body>
     <!-- Version Display - Bottom Left -->
     <div class="version-display">
-        <strong>Version:</strong> v3.0-CLEAN | <strong>Updated:</strong> 2026-03-02 17:00 UTC
+        <strong>Version:</strong> v3.1 | <strong>Updated:</strong> 2026-03-02 17:15 UTC
     </div>
 
     <div class="container">
@@ -309,7 +309,7 @@
             const redirectUri = window.location.origin + window.location.pathname;
             
             console.log('=== CONFIGURATION INFO ===');
-            console.log('Version: v3.0-CLEAN - 2026-03-02 17:00 UTC');
+            console.log('Version: v3.1 - 2026-03-02 17:15 UTC');
             console.log('Current URL:', currentUrl);
             console.log('Redirect URI:', redirectUri);
             console.log('Client ID:', CLIENT_ID || 'NOT SET');
@@ -798,6 +798,33 @@
                 }
 
                 console.log('✓ Participant attributes updated successfully (UserId, QueueId, ForcedUnpark)');
+                
+                // Step 1b: Also PATCH to authenticated user's participant if different from workflow participant
+                if (targetParticipantId !== participantId) {
+                    console.log(`Step 1b: Also PATCH attributes to authenticated user participant ${participantId}`);
+                    
+                    const patchUserResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/attributes`, {
+                        method: 'PATCH',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${accessToken}`
+                        },
+                        body: JSON.stringify({
+                            attributes: {
+                                UserId: userId,
+                                QueueId: queueId,
+                                ForcedUnpark: 'true'
+                            }
+                        })
+                    });
+
+                    if (patchUserResponse.ok) {
+                        console.log('✓ Attributes also updated on authenticated user participant');
+                    } else {
+                        console.warn('⚠ Could not update authenticated user participant attributes (non-critical)');
+                    }
+                }
+                
                 rowButton.textContent = '⏳ Transferring...';
 
                 // Step 2: Transfer to CD_RedistributeEmails queue
