@@ -338,7 +338,7 @@
             const redirectUri = window.location.origin + window.location.pathname;
             
             console.log('=== CONFIGURATION INFO ===');
-            console.log('Version: v3.31-AUTO - 2026-03-05 17:00 UTC');
+            console.log('Version: v3.3-AUTO - 2026-03-05 18:00 UTC');
             console.log('Current URL:', currentUrl);
             console.log('Redirect URI:', redirectUri);
             console.log('Client ID:', CLIENT_ID || 'NOT SET');
@@ -814,7 +814,7 @@
                         'Authorization': `Bearer ${accessToken}`
                     },
                     body: JSON.stringify({
-                        id: "unparked-001"
+                        id: "unparked-001",
                         schemaId: CUSTOM_ATTRIBUTES_SCHEMA_ID,
                         divisions: [DIVISION_ID],
                         customAttributes: {
