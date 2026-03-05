@@ -247,7 +247,7 @@
 <body>
     <!-- Version Display - Bottom Left -->
     <div class="version-display">
-        <strong>Version:</strong> v3.1 | <strong>Updated:</strong> 2026-03-02 17:15 UTC
+        <strong>Version:</strong> v3.3-AUTO | <strong>Updated:</strong> 2026-03-05 18:00 UTC
     </div>
 
     <div class="container">
@@ -259,6 +259,27 @@
 
             <div id="querySection">
                 <h3 style="margin-bottom: 20px; color: #333;">Parked Email Conversations</h3>
+                
+                <div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; display: inline-block;">
+                    <label for="expirationHours" style="margin-right: 10px; font-weight: 500;">
+                        Auto-redistribute when within
+                    </label>
+                    <input 
+                        type="number" 
+                        id="expirationHours" 
+                        min="1" 
+                        max="144" 
+                        value="24"
+                        style="width: 70px; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; margin-right: 5px;"
+                        onchange="updateAutoRedistributeHours(this.value)"
+                    />
+                    <span>hours of expiration</span>
+                    <span id="autoStatus" style="margin-left: 15px; padding: 4px 12px; border-radius: 4px; font-size: 12px; background: #10b981; color: white;">
+                        ● Auto-enabled
+                    </span>
+                </div>
+                <br>
+                
                 <button id="queryBtn" onclick="queryConversations()">🔍 Query Parked Emails</button>
                 <button onclick="queryConversations()" style="background: #28a745;">🔄 Refresh</button>
                 <button id="toggleIdsBtn" onclick="toggleIds()" style="background: #6c757d;">👁️ Hide IDs</button>
@@ -303,13 +324,21 @@
         // Redistribution queue configuration
         const REDISTRIBUTE_QUEUE_NAME = 'CD_RedistributeEmails';
         const REDISTRIBUTE_QUEUE_ID = '3e47e701-fb9e-4682-b278-47c3252f4f39';
+        
+        // Custom attributes configuration
+        const CUSTOM_ATTRIBUTES_SCHEMA_ID = '7e57ee8b-1720-4d3c-bd87-7ec6a2d50aa0';
+        const DIVISION_ID = 'ea026588-1ef5-430b-8fc7-6d512dc5a22c';
+        
+        // Auto-redistribution settings (will be set by user input)
+        let AUTO_REDISTRIBUTE_HOURS = 24; // Default: 24 hours before expiration
+        let autoCheckInterval = null;
 
         window.onload = function() {
             const currentUrl = window.location.href;
             const redirectUri = window.location.origin + window.location.pathname;
             
             console.log('=== CONFIGURATION INFO ===');
-            console.log('Version: v3.1 - 2026-03-02 17:15 UTC');
+            console.log('Version: v3.3-AUTO - 2026-03-05 18:00 UTC');
             console.log('Current URL:', currentUrl);
             console.log('Redirect URI:', redirectUri);
             console.log('Client ID:', CLIENT_ID || 'NOT SET');
@@ -394,6 +423,9 @@
                 
                 window.history.replaceState({}, document.title, window.location.pathname);
                 showStatus('✅ Authentication successful!', 'success');
+                
+                // Start auto-redistribution monitoring
+                startAutoCheck();
             }
         }
 
@@ -405,6 +437,9 @@
                 accessToken = savedToken;
                 tokenExpiry = parseInt(savedExpiry);
                 showStatus('✅ Already authenticated', 'success');
+                
+                // Start auto-redistribution monitoring
+                startAutoCheck();
             } else {
                 showStatus('🔄 Redirecting to login...', 'info');
                 setTimeout(() => initiateLogin(), 1000);
@@ -768,63 +803,34 @@
             rowButton.textContent = '⏳ Updating...';
 
             try {
-                // Use workflow participant ID for PATCH if available, otherwise use regular participant ID
-                const targetParticipantId = workflowParticipantId !== 'N/A' ? workflowParticipantId : participantId;
+                // Step 1: PUT conversation custom attributes
+                console.log(`Step 1: PUT custom attributes for conversation ${conversationId}`);
+                console.log(`Adding UserId: ${userId}, QueueId: ${queueId}, ForcedUnpark: true`);
                 
-                // Step 1: PATCH participant attributes to add UserId, QueueId, and ForcedUnpark
-                console.log(`Step 1: PATCH attributes for conversation ${conversationId}`);
-                console.log(`Using workflow participant ID: ${targetParticipantId}`);
-                console.log(`Adding UserId: ${userId}, QueueId: ${queueId}, ForcedUnpark: 'true'`);
-                
-                const patchResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${targetParticipantId}/attributes`, {
-                    method: 'PATCH',
+                const putResponse = await fetch(`${BASE_URL}/api/v2/conversations/${conversationId}/customattributes`, {
+                    method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${accessToken}`
                     },
                     body: JSON.stringify({
-                        attributes: {
+                        schemaId: CUSTOM_ATTRIBUTES_SCHEMA_ID,
+                        divisions: [DIVISION_ID],
+                        customAttributes: {
                             UserId: userId,
                             QueueId: queueId,
-                            ForcedUnpark: 'true'
+                            ForcedUnpark: true
                         }
                     })
                 });
 
-                if (!patchResponse.ok) {
-                    const patchError = await patchResponse.json().catch(() => ({}));
-                    console.error('PATCH attributes failed:', patchError);
-                    throw new Error(`Failed to update attributes: ${patchError.message || patchResponse.status}`);
+                if (!putResponse.ok) {
+                    const putError = await putResponse.json().catch(() => ({}));
+                    console.error('PUT custom attributes failed:', putError);
+                    throw new Error(`Failed to update custom attributes: ${putError.message || putResponse.status}`);
                 }
 
-                console.log('✓ Participant attributes updated successfully (UserId, QueueId, ForcedUnpark)');
-                
-                // Step 1b: Also PATCH to authenticated user's participant if different from workflow participant
-                if (targetParticipantId !== participantId) {
-                    console.log(`Step 1b: Also PATCH attributes to authenticated user participant ${participantId}`);
-                    
-                    const patchUserResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/attributes`, {
-                        method: 'PATCH',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${accessToken}`
-                        },
-                        body: JSON.stringify({
-                            attributes: {
-                                UserId: userId,
-                                QueueId: queueId,
-                                ForcedUnpark: 'true'
-                            }
-                        })
-                    });
-
-                    if (patchUserResponse.ok) {
-                        console.log('✓ Attributes also updated on authenticated user participant');
-                    } else {
-                        console.warn('⚠ Could not update authenticated user participant attributes (non-critical)');
-                    }
-                }
-                
+                console.log('✓ Custom attributes updated successfully (UserId, QueueId, ForcedUnpark)');
                 rowButton.textContent = '⏳ Transferring...';
 
                 // Step 2: Transfer to CD_RedistributeEmails queue
@@ -859,6 +865,212 @@
                 rowButton.disabled = false;
                 rowButton.textContent = '↻ Redistribute';
             }
+        }
+
+        function updateAutoRedistributeHours(hours) {
+            AUTO_REDISTRIBUTE_HOURS = parseInt(hours) || 24;
+            console.log(`Auto-redistribute threshold updated to ${AUTO_REDISTRIBUTE_HOURS} hours`);
+        }
+
+        async function checkAndAutoRedistribute() {
+            console.log(`[Auto-Check] Running auto-redistribution check (threshold: ${AUTO_REDISTRIBUTE_HOURS} hours)`);
+            
+            try {
+                const response = await queryConversationsData();
+                if (!response || response.conversations.length === 0) {
+                    console.log('[Auto-Check] No conversations found');
+                    return;
+                }
+                
+                const conversations = response.conversations;
+                const now = new Date().getTime();
+                const hoursInMs = AUTO_REDISTRIBUTE_HOURS * 60 * 60 * 1000;
+                const expirationThresholdMs = 168 * 60 * 60 * 1000; // 7 days in ms
+                
+                let redistributed = 0;
+                
+                conversations.forEach(conv => {
+                    conv.participants?.forEach(participant => {
+                        participant.sessions?.forEach(session => {
+                            session.segments?.forEach(segment => {
+                                const isCurrentlyParked = (
+                                    segment.segmentType === 'parked' &&
+                                    segment.queueId && 
+                                    session.mediaType === 'email' && 
+                                    segment.segmentStart && 
+                                    !segment.segmentEnd &&
+                                    (!segment.disconnectType || segment.disconnectType === '')
+                                );
+                                
+                                if (isCurrentlyParked) {
+                                    const segmentStart = new Date(segment.segmentStart).getTime();
+                                    const expiresAt = segmentStart + expirationThresholdMs;
+                                    const timeUntilExpiration = expiresAt - now;
+                                    const hoursRemaining = Math.floor(timeUntilExpiration / (60 * 60 * 1000));
+                                    
+                                    if (timeUntilExpiration <= hoursInMs && timeUntilExpiration > 0) {
+                                        console.log(`[Auto-Redistribute] Email ${conv.conversationId} expires in ${hoursRemaining} hours - triggering redistribution`);
+                                        redistributed++;
+                                        
+                                        // Trigger redistribution programmatically
+                                        const userId = participant.userId || 'N/A';
+                                        const queueId = segment.queueId;
+                                        
+                                        // Find participant IDs
+                                        let lastParticipantId = null;
+                                        let workflowParticipantId = null;
+                                        conv.participants?.forEach(p => {
+                                            if (p.participantId) lastParticipantId = p.participantId;
+                                            if (p.purpose === 'workflow' && p.participantId) workflowParticipantId = p.participantId;
+                                        });
+                                        
+                                        // Auto-redistribute (silently, without button)
+                                        redistributeEmailAuto(conv.conversationId, lastParticipantId, workflowParticipantId, userId, queueId);
+                                    }
+                                }
+                            });
+                        });
+                    });
+                });
+                
+                if (redistributed > 0) {
+                    console.log(`[Auto-Check] Auto-redistributed ${redistributed} emails`);
+                    showStatus(`✅ Auto-redistributed ${redistributed} email(s) approaching expiration`, 'success');
+                }
+            } catch (error) {
+                console.error('[Auto-Check] Error during auto-redistribution:', error);
+            }
+        }
+
+        async function redistributeEmailAuto(conversationId, participantId, workflowParticipantId, userId, queueId) {
+            try {
+                console.log(`[Auto] Redistributing ${conversationId}`);
+                
+                // Step 1: PUT custom attributes
+                const putResponse = await fetch(`${BASE_URL}/api/v2/conversations/${conversationId}/customattributes`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${accessToken}`
+                    },
+                    body: JSON.stringify({
+                        schemaId: CUSTOM_ATTRIBUTES_SCHEMA_ID,
+                        divisions: [DIVISION_ID],
+                        customAttributes: {
+                            UserId: userId,
+                            QueueId: queueId,
+                            ForcedUnpark: true
+                        }
+                    })
+                });
+
+                if (!putResponse.ok) {
+                    console.error('[Auto] Failed to update custom attributes');
+                    return;
+                }
+
+                // Step 2: Transfer to queue
+                const transferResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/replace`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${accessToken}`
+                    },
+                    body: JSON.stringify({
+                        queueId: REDISTRIBUTE_QUEUE_ID
+                    })
+                });
+
+                if (transferResponse.ok) {
+                    console.log(`[Auto] Successfully redistributed ${conversationId}`);
+                } else {
+                    console.error('[Auto] Transfer failed');
+                }
+            } catch (error) {
+                console.error('[Auto] Redistribution error:', error);
+            }
+        }
+
+        async function queryConversationsData() {
+            try {
+                const interval = {
+                    intervalStart: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+                    intervalEnd: new Date().toISOString()
+                };
+
+                const query = {
+                    interval: `${interval.intervalStart}/${interval.intervalEnd}`,
+                    order: 'desc',
+                    orderBy: 'conversationStart',
+                    paging: {
+                        pageSize: 100,
+                        pageNumber: 1
+                    },
+                    segmentFilters: [
+                        {
+                            type: 'and',
+                            predicates: [
+                                {
+                                    type: 'dimension',
+                                    dimension: 'mediaType',
+                                    operator: 'matches',
+                                    value: 'email'
+                                },
+                                {
+                                    type: 'dimension',
+                                    dimension: 'queueId',
+                                    operator: 'exists'
+                                },
+                                {
+                                    type: 'dimension',
+                                    dimension: 'segmentEnd',
+                                    operator: 'notExists'
+                                }
+                            ]
+                        }
+                    ],
+                    conversationFilters: [
+                        {
+                            type: 'and',
+                            predicates: [
+                                {
+                                    type: 'dimension',
+                                    dimension: 'conversationEnd',
+                                    operator: 'notExists'
+                                }
+                            ]
+                        }
+                    ]
+                };
+
+                const response = await fetch(`${BASE_URL}/api/v2/analytics/conversations/details/query`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${accessToken}`
+                    },
+                    body: JSON.stringify(query)
+                });
+
+                if (!response.ok) {
+                    return null;
+                }
+
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error('[Auto-Check] Query error:', error);
+                return null;
+            }
+        }
+
+        function startAutoCheck() {
+            if (autoCheckInterval) clearInterval(autoCheckInterval);
+            autoCheckInterval = setInterval(checkAndAutoRedistribute, 60 * 60 * 1000); // Every hour
+            console.log('[Auto-Check] Started hourly auto-redistribution monitoring');
+            
+            // Run initial check after 1 minute
+            setTimeout(checkAndAutoRedistribute, 60 * 1000);
         }
     </script>
 </body>
