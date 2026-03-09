@@ -247,7 +247,7 @@
 <body>
     <!-- Version Display - Bottom Left -->
     <div class="version-display">
-        <strong>Version:</strong> v3.3.1-AUTO-FIX | <strong>Updated:</strong> 2026-03-05 18:30 UTC
+        <strong>Version:</strong> v3.3.2-FIXED | <strong>Updated:</strong> 2026-03-05 19:00 UTC
     </div>
 
     <div class="container">
@@ -339,7 +339,7 @@
             const redirectUri = window.location.origin + window.location.pathname;
             
             console.log('=== CONFIGURATION INFO ===');
-            console.log('Version: v3.3.1-AUTO-FIX - 2026-03-05 18:30 UTC');
+            console.log('Version: v3.3.2-FIXED - 2026-03-05 19:00 UTC');
             console.log('Current URL:', currentUrl);
             console.log('Redirect URI:', redirectUri);
             console.log('Client ID:', CLIENT_ID || 'NOT SET');
@@ -815,6 +815,7 @@
                         'Authorization': `Bearer ${accessToken}`
                     },
                     body: JSON.stringify({
+                        id: conversationId, // Required field
                         schemaId: CUSTOM_ATTRIBUTES_SCHEMA_ID,
                         divisions: [DIVISION_ID],
                         customAttributes: {
@@ -970,6 +971,7 @@
                         'Authorization': `Bearer ${accessToken}`
                     },
                     body: JSON.stringify({
+                        id: conversationId, // Required field
                         schemaId: CUSTOM_ATTRIBUTES_SCHEMA_ID,
                         divisions: [DIVISION_ID],
                         customAttributes: {
