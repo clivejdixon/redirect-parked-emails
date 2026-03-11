@@ -247,7 +247,7 @@
 <body>
     <!-- Version Display - Bottom Left -->
     <div class="version-display">
-        <strong>Version:</strong> v3.3.3-DEBUG | <strong>Updated:</strong> 2026-03-05 19:30 UTC
+        <strong>Version:</strong> v3.3.4-FIXED | <strong>Updated:</strong> 2026-03-05 20:00 UTC
     </div>
 
     <div class="container">
@@ -339,7 +339,7 @@
             const redirectUri = window.location.origin + window.location.pathname;
             
             console.log('=== CONFIGURATION INFO ===');
-            console.log('Version: v3.3.3-DEBUG - 2026-03-05 19:30 UTC');
+            console.log('Version: v3.3.4-FIXED - 2026-03-05 20:00 UTC');
             console.log('Current URL:', currentUrl);
             console.log('Redirect URI:', redirectUri);
             console.log('Client ID:', CLIENT_ID || 'NOT SET');
@@ -921,30 +921,21 @@
                                         console.log(`[Auto-Redistribute] Email ${conv.conversationId} expires in ${hoursRemaining} hours - triggering redistribution`);
                                         redistributed++;
                                         
-                                        // Find the userId from the participant who has the parked segment
-                                        let parkedByUserId = 'N/A';
-                                        conv.participants?.forEach(p => {
-                                            p.sessions?.forEach(s => {
-                                                s.segments?.forEach(seg => {
-                                                    if (seg === segment && p.userId) {
-                                                        parkedByUserId = p.userId;
-                                                    }
-                                                });
-                                            });
-                                        });
-                                        
+                                        // Use the participant who HAS the parked segment (not lastParticipantId)
+                                        const activeParticipantId = participant.participantId;
+                                        const parkedByUserId = participant.userId || 'N/A';
                                         const queueId = segment.queueId;
                                         
-                                        // Find participant IDs
-                                        let lastParticipantId = null;
+                                        // Find workflow participant ID
                                         let workflowParticipantId = null;
                                         conv.participants?.forEach(p => {
-                                            if (p.participantId) lastParticipantId = p.participantId;
                                             if (p.purpose === 'workflow' && p.participantId) workflowParticipantId = p.participantId;
                                         });
                                         
-                                        // Auto-redistribute (AWAIT the promise)
-                                        redistributeEmailAuto(conv.conversationId, lastParticipantId, workflowParticipantId, parkedByUserId, queueId).catch(err => {
+                                        console.log(`  Using active participant: ${activeParticipantId}`);
+                                        
+                                        // Auto-redistribute
+                                        redistributeEmailAuto(conv.conversationId, activeParticipantId, workflowParticipantId, parkedByUserId, queueId).catch(err => {
                                             console.error(`[Auto] Failed to redistribute ${conv.conversationId}:`, err);
                                         });
                                     }
