@@ -247,7 +247,7 @@
 <body>
     <!-- Version Display - Bottom Left -->
     <div class="version-display">
-        <strong>Version:</strong> v3.3.2-FIXED | <strong>Updated:</strong> 2026-03-05 19:00 UTC
+        <strong>Version:</strong> v3.3.3-DEBUG | <strong>Updated:</strong> 2026-03-05 19:30 UTC
     </div>
 
     <div class="container">
@@ -339,7 +339,7 @@
             const redirectUri = window.location.origin + window.location.pathname;
             
             console.log('=== CONFIGURATION INFO ===');
-            console.log('Version: v3.3.2-FIXED - 2026-03-05 19:00 UTC');
+            console.log('Version: v3.3.3-DEBUG - 2026-03-05 19:30 UTC');
             console.log('Current URL:', currentUrl);
             console.log('Redirect URI:', redirectUri);
             console.log('Client ID:', CLIENT_ID || 'NOT SET');
@@ -910,7 +910,12 @@
                                     const timeUntilExpiration = expiresAt - now;
                                     const hoursRemaining = Math.floor(timeUntilExpiration / (60 * 60 * 1000));
                                     
-                                    console.log(`[Auto-Check] Email ${conv.conversationId}: ${hoursRemaining} hours until expiration (threshold: ${AUTO_REDISTRIBUTE_HOURS})`);
+                                    console.log(`[Auto-Check] Email ${conv.conversationId}:`);
+                                    console.log(`  Parked at: ${segment.segmentStart} (${new Date(segment.segmentStart).toLocaleString()})`);
+                                    console.log(`  Expires at: ${new Date(expiresAt).toLocaleString()}`);
+                                    console.log(`  Hours remaining: ${hoursRemaining}`);
+                                    console.log(`  Threshold: ${AUTO_REDISTRIBUTE_HOURS} hours`);
+                                    console.log(`  Should redistribute: ${timeUntilExpiration <= hoursInMs && timeUntilExpiration > 0}`);
                                     
                                     if (timeUntilExpiration <= hoursInMs && timeUntilExpiration > 0) {
                                         console.log(`[Auto-Redistribute] Email ${conv.conversationId} expires in ${hoursRemaining} hours - triggering redistribution`);
