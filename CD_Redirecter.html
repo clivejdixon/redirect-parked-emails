@@ -247,7 +247,7 @@
 <body>
     <!-- Version Display - Bottom Left -->
     <div class="version-display">
-        <strong>Version:</strong> v3.3.5 | <strong>Updated:</strong> 2026-03-05 20:15 UTC
+        <strong>Version:</strong> v3.4.1-WRAPUP-FIXED | <strong>Updated:</strong> 2026-03-05 21:00 UTC
     </div>
 
     <div class="container">
@@ -339,7 +339,7 @@
             const redirectUri = window.location.origin + window.location.pathname;
             
             console.log('=== CONFIGURATION INFO ===');
-            console.log('Version: v3.3.5 - 2026-03-05 20:15 UTC');
+            console.log('Version: v3.4.1-WRAPUP-FIXED - 2026-03-05 21:00 UTC');
             console.log('Current URL:', currentUrl);
             console.log('Redirect URI:', redirectUri);
             console.log('Client ID:', CLIENT_ID || 'NOT SET');
@@ -479,7 +479,7 @@
 
             try {
                 const queryPayload = {
-                    interval: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString() + '/' + new Date().toISOString(),
+                    interval: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() + '/' + new Date().toISOString(),
                     order: 'desc',
                     orderBy: 'conversationStart',
                     paging: {
@@ -661,6 +661,7 @@
                                         conversationId: conv.conversationId,
                                         participantId: lastParticipantId || participant.participantId || 'N/A',
                                         workflowParticipantId: lastWorkflowParticipantId || lastParticipantId || participant.participantId || 'N/A',
+                                        communicationId: session.peerId || 'N/A', // Extract peerId as communicationId
                                         userId: participant.userId || 'N/A',
                                         queueId: segment.queueId,
                                         acdQueueId: acdQueueId || segment.queueId, // Use ACD queue if found, otherwise current queue
@@ -759,7 +760,7 @@
                         <td style="white-space: nowrap;">${item.expirationDate}</td>
                         <td>
                             <button id="${buttonId}" class="redistribute-btn" 
-                                onclick="redistributeEmail('${item.conversationId}', '${item.participantId}', '${item.workflowParticipantId}', '${item.userId}', '${item.queueId}', '${item.acdQueueId}', document.getElementById('${buttonId}'))">
+                                onclick="redistributeEmail('${item.conversationId}', '${item.participantId}', '${item.workflowParticipantId}', '${item.communicationId}', '${item.userId}', '${item.queueId}', '${item.acdQueueId}', document.getElementById('${buttonId}'))">
                                 ↻ Redistribute
                             </button>
                         </td>
@@ -795,7 +796,7 @@
             toggleBtn.textContent = showIds ? '👁️ Hide IDs' : '👁️ Show IDs';
         }
 
-        async function redistributeEmail(conversationId, participantId, workflowParticipantId, userId, queueId, acdQueueId, rowButton) {
+        async function redistributeEmail(conversationId, participantId, workflowParticipantId, communicationId, userId, queueId, acdQueueId, rowButton) {
             if (!confirm('Are you sure you want to redistribute this email back to the queue? Queue routing will attempt to send to the original agent.')) {
                 return;
             }
@@ -852,6 +853,31 @@
 
                 if (transferResponse.ok) {
                     console.log(`✓ Email transferred to ${REDISTRIBUTE_QUEUE_NAME} queue`);
+                    
+                    // Step 3: Automatically wrap up the original participant using communicationId
+                    console.log(`Step 3: Wrapping up participant ${participantId}, communication ${communicationId}`);
+                    
+                    const wrapupResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/communications/${communicationId}/wrapup`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${accessToken}`
+                        },
+                        body: JSON.stringify({
+                            code: "ca8f495d-e32d-4c6d-b721-2b061ca80213",
+                            name: "CD_AutoUnparked",
+                            notes: "Unparked due to time limit"
+                        })
+                    });
+
+                    if (wrapupResponse.ok) {
+                        console.log('✓ Participant communication wrapped up automatically');
+                    } else {
+                        const wrapupError = await wrapupResponse.json().catch(() => ({}));
+                        console.warn('⚠ Wrapup failed (non-critical):', wrapupError.message || wrapupResponse.status);
+                        // Don't fail the whole operation if wrapup fails
+                    }
+                    
                     showStatus(`✅ Email sent to ${REDISTRIBUTE_QUEUE_NAME}! Attributes: UserId, QueueId, ForcedUnpark=true. In-queue flow will handle routing.`, 'success');
                     rowButton.textContent = '✓ Redistributed';
                     rowButton.style.background = '#28a745';
@@ -924,6 +950,7 @@
                                         // Use the participant who HAS the parked segment (not lastParticipantId)
                                         const activeParticipantId = participant.participantId;
                                         const parkedByUserId = participant.userId || 'N/A';
+                                        const communicationId = session.peerId || 'N/A'; // Extract peerId as communicationId
                                         const queueId = segment.queueId;
                                         
                                         // Find workflow participant ID
@@ -932,10 +959,10 @@
                                             if (p.purpose === 'workflow' && p.participantId) workflowParticipantId = p.participantId;
                                         });
                                         
-                                        console.log(`  Using active participant: ${activeParticipantId}`);
+                                        console.log(`  Using active participant: ${activeParticipantId}, communication: ${communicationId}`);
                                         
                                         // Auto-redistribute
-                                        redistributeEmailAuto(conv.conversationId, activeParticipantId, workflowParticipantId, parkedByUserId, queueId).catch(err => {
+                                        redistributeEmailAuto(conv.conversationId, activeParticipantId, workflowParticipantId, communicationId, parkedByUserId, queueId).catch(err => {
                                             console.error(`[Auto] Failed to redistribute ${conv.conversationId}:`, err);
                                         });
                                     }
@@ -960,10 +987,10 @@
             }
         }
 
-        async function redistributeEmailAuto(conversationId, participantId, workflowParticipantId, userId, queueId) {
+        async function redistributeEmailAuto(conversationId, participantId, workflowParticipantId, communicationId, userId, queueId) {
             try {
                 console.log(`[Auto] Starting redistribution for ${conversationId}`);
-                console.log(`[Auto] UserId: ${userId}, QueueId: ${queueId}, ParticipantId: ${participantId}`);
+                console.log(`[Auto] UserId: ${userId}, QueueId: ${queueId}, ParticipantId: ${participantId}, CommunicationId: ${communicationId}`);
                 
                 // Step 1: PUT custom attributes
                 const putResponse = await fetch(`${BASE_URL}/api/v2/conversations/${conversationId}/customattributes`, {
@@ -1010,7 +1037,32 @@
                     throw new Error(`Transfer failed: ${transferResponse.status}`);
                 }
                 
-                console.log(`[Auto] ✓ Successfully redistributed ${conversationId}`);
+                console.log(`[Auto] ✓ Successfully transferred to queue`);
+                
+                // Step 3: Automatically wrap up the original participant using communicationId
+                console.log(`[Auto] Step 3: Wrapping up participant ${participantId}, communication ${communicationId}`);
+                
+                const wrapupResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/communications/${communicationId}/wrapup`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${accessToken}`
+                    },
+                    body: JSON.stringify({
+                        code: "ca8f495d-e32d-4c6d-b721-2b061ca80213",
+                        name: "CD_AutoUnparked",
+                        notes: "Unparked due to time limit"
+                    })
+                });
+
+                if (wrapupResponse.ok) {
+                    console.log('[Auto] ✓ Participant communication wrapped up automatically');
+                } else {
+                    const wrapupError = await wrapupResponse.json().catch(() => ({}));
+                    console.warn('[Auto] ⚠ Wrapup failed (non-critical):', wrapupError.message || wrapupResponse.status);
+                }
+                
+                console.log(`[Auto] ✓ Redistribution complete for ${conversationId}`);
                 return true;
             } catch (error) {
                 console.error(`[Auto] Redistribution error for ${conversationId}:`, error);
