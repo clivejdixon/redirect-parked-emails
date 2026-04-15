@@ -247,7 +247,7 @@
 <body>
     <!-- Version Display - Bottom Left -->
     <div class="version-display">
-        <strong>Version:</strong> v3.4.9-STABLE-EXTRACTION | <strong>Updated:</strong> 2026-04-15 21:00 UTC
+        <strong>Version:</strong> v3.5.0-PARTICIPANT-WRAPUP | <strong>Updated:</strong> 2026-04-15 21:00 UTC
     </div>
 
     <div class="container">
@@ -339,7 +339,7 @@
             const redirectUri = window.location.origin + window.location.pathname;
 
             console.log('=== CONFIGURATION INFO ===');
-            console.log('Version: v3.4.9-STABLE-EXTRACTION - 2026-04-15 21:00 UTC');
+            console.log('Version: v3.5.0-PARTICIPANT-WRAPUP - 2026-04-15 21:00 UTC');
             console.log('Current URL:', currentUrl);
             console.log('Redirect URI:', redirectUri);
             console.log('Client ID:', CLIENT_ID || 'NOT SET');
@@ -843,6 +843,59 @@
             toggleBtn.textContent = showIds ? '👁️ Hide IDs' : '👁️ Show IDs';
         }
 
+
+        async function patchParticipantWrapup(conversationId, parkedParticipantId) {
+            const response = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${parkedParticipantId}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${accessToken}`
+                },
+                body: JSON.stringify({
+                    wrapup: {
+                        code: "ca8f495d-e32d-4c6d-b721-2b061ca80213",
+                        notes: "Unparked due to time limit"
+                    }
+                })
+            });
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(`Participant wrap-up patch failed: ${err.message || response.status}`);
+            }
+            return true;
+        }
+
+        async function verifyParticipantWrapup(conversationId, parkedParticipantId, label = 'Verify') {
+            try {
+                const response = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}`, {
+                    headers: { 'Authorization': `Bearer ${accessToken}` }
+                });
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    console.warn(`[${label}] Verification GET failed:`, err.message || response.status);
+                    return null;
+                }
+                const convo = await response.json();
+                const participant = (convo.participants || []).find(p => p.id === parkedParticipantId || p.participantId === parkedParticipantId);
+                if (!participant) {
+                    console.warn(`[${label}] Verification participant not found: ${parkedParticipantId}`);
+                    return null;
+                }
+                const summary = {
+                    participantId: parkedParticipantId,
+                    purpose: participant.purpose || 'unknown',
+                    state: participant.state || participant.participantState || 'unknown',
+                    wrapupRequired: participant.wrapupRequired,
+                    wrapup: participant.wrapup || null
+                };
+                console.log(`[${label}] Participant wrap-up verification:`, summary);
+                return summary;
+            } catch (error) {
+                console.warn(`[${label}] Verification error:`, error);
+                return null;
+            }
+        }
+
         async function redistributeEmail(conversationId, parkedParticipantId, emailParticipantId, workflowParticipantId, communicationId, userId, queueId, acdQueueId, rowButton) {
             if (!confirm('Are you sure you want to redistribute this email back to the queue? Queue routing will attempt to send to the original agent.')) {
                 return;
@@ -904,28 +957,10 @@
 
                 console.log('✓ Custom attributes updated successfully (UserId, QueueId, ForcedUnpark)');
                 rowButton.textContent = '⏳ Wrapping up...';
-
-                console.log(`Step 2: Wrapping up EMAIL participant ${emailParticipantId}, communication ${communicationId}`);
-
-                const wrapupResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${emailParticipantId}/communications/${communicationId}/wrapup`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${accessToken}`
-                    },
-                    body: JSON.stringify({
-                        code: "ca8f495d-e32d-4c6d-b721-2b061ca80213",
-                        name: "CD_AutoUnparked",
-                        notes: "Unparked due to time limit"
-                    })
-                });
-
-                if (!wrapupResponse.ok) {
-                    const wrapupError = await wrapupResponse.json().catch(() => ({}));
-                    console.warn('⚠ Wrapup failed (non-critical):', wrapupError.message || wrapupResponse.status);
-                } else {
-                    console.log('✓ Participant communication wrapped up automatically');
-                }
+                console.log(`Step 2: Patching wrap-up on parked participant ${parkedParticipantId}`);
+                await patchParticipantWrapup(conversationId, parkedParticipantId);
+                console.log('✓ Participant wrap-up patched successfully');
+                await verifyParticipantWrapup(conversationId, parkedParticipantId, 'Manual');
 
                 rowButton.textContent = '⏳ Transferring...';
                 console.log(`Step 3: Transferring parked participant ${parkedParticipantId} to ${REDISTRIBUTE_QUEUE_NAME} queue (${REDISTRIBUTE_QUEUE_ID})`);
@@ -1132,27 +1167,10 @@
                 }
 
                 console.log('[Auto] ✓ Custom attributes updated');
-                console.log(`[Auto] Step 2: Wrapping up EMAIL participant ${emailParticipantId}, communication ${communicationId}`);
-
-                const wrapupResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${emailParticipantId}/communications/${communicationId}/wrapup`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${accessToken}`
-                    },
-                    body: JSON.stringify({
-                        code: "ca8f495d-e32d-4c6d-b721-2b061ca80213",
-                        name: "CD_AutoUnparked",
-                        notes: "Unparked due to time limit"
-                    })
-                });
-
-                if (wrapupResponse.ok) {
-                    console.log('[Auto] ✓ Participant communication wrapped up automatically');
-                } else {
-                    const wrapupError = await wrapupResponse.json().catch(() => ({}));
-                    console.warn('[Auto] ⚠ Wrapup failed (non-critical):', wrapupError.message || wrapupResponse.status);
-                }
+                console.log(`[Auto] Step 2: Patching wrap-up on parked participant ${parkedParticipantId}`);
+                await patchParticipantWrapup(conversationId, parkedParticipantId);
+                console.log('[Auto] ✓ Participant wrap-up patched successfully');
+                await verifyParticipantWrapup(conversationId, parkedParticipantId, 'Auto');
 
                 console.log(`[Auto] Step 3: Transferring parked participant ${parkedParticipantId} to queue`);
 
@@ -1270,88 +1288,6 @@
                 }
             } catch (error) {
                 console.error('[Auto-Check] Error during auto-redistribution:', error);
-            }
-        }
-
-        async function redistributeEmailAuto(conversationId, participantId, workflowParticipantId, communicationId, userId, queueId) {
-            try {
-                console.log(`[Auto] Starting redistribution for ${conversationId}`);
-                console.log(`[Auto] UserId: ${userId}, QueueId: ${queueId}, ParticipantId: ${participantId}, CommunicationId: ${communicationId}`);
-
-                // Step 1: PUT custom attributes
-                const putResponse = await fetch(`${BASE_URL}/api/v2/conversations/${conversationId}/customattributes`, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${accessToken}`
-                    },
-                    body: JSON.stringify({
-                        id: conversationId, // Required field
-                        schemaId: CUSTOM_ATTRIBUTES_SCHEMA_ID,
-                        divisions: [DIVISION_ID],
-                        customAttributes: {
-                            UserId: userId,
-                            QueueId: queueId,
-                            ForcedUnpark: true
-                        }
-                    })
-                });
-
-                if (!putResponse.ok) {
-                    const errorData = await putResponse.json().catch(() => ({}));
-                    console.error('[Auto] Failed to update custom attributes:', errorData);
-                    throw new Error(`Custom attributes failed: ${putResponse.status}`);
-                }
-
-                console.log('[Auto] ✓ Custom attributes updated');
-
-                // Step 2: Automatically wrap up the original participant using communicationId
-                console.log(`[Auto] Step 2: Wrapping up participant ${participantId}, communication ${communicationId}`);
-
-                const wrapupResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/communications/${communicationId}/wrapup`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${accessToken}`
-                    },
-                    body: JSON.stringify({
-                        code: "ca8f495d-e32d-4c6d-b721-2b061ca80213",
-                        name: "CD_AutoUnparked",
-                        notes: "Unparked due to time limit"
-                    })
-                });
-
-                if (wrapupResponse.ok) {
-                    console.log('[Auto] ✓ Participant communication wrapped up automatically');
-                } else {
-                    const wrapupError = await wrapupResponse.json().catch(() => ({}));
-                    console.warn('[Auto] ⚠ Wrapup failed (non-critical):', wrapupError.message || wrapupResponse.status);
-                }
-
-                // Step 3: Transfer to queue
-                const transferResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/replace`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${accessToken}`
-                    },
-                    body: JSON.stringify({
-                        queueId: REDISTRIBUTE_QUEUE_ID
-                    })
-                });
-
-                if (!transferResponse.ok) {
-                    const errorData = await transferResponse.json().catch(() => ({}));
-                    console.error('[Auto] Transfer failed:', errorData);
-                    throw new Error(`Transfer failed: ${transferResponse.status}`);
-                }
-
-                console.log(`[Auto] ✓ Successfully transferred to queue`);
-                console.log(`[Auto] ✓ Redistribution complete for ${conversationId}`);
-                return true;
-            } catch (error) {
-                console.error(`[Auto] Redistribution error for ${conversationId}:`, error);
-                throw error;
             }
         }
 
