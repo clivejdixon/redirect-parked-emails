@@ -247,7 +247,7 @@
 <body>
     <!-- Version Display - Bottom Left -->
     <div class="version-display">
-        <strong>Version:</strong> v3.4.8b-CLEAN-PARTICIPANTS | <strong>Updated:</strong> 2026-04-15 21:00 UTC
+        <strong>Version:</strong> v3.4.9-STABLE-EXTRACTION | <strong>Updated:</strong> 2026-04-15 21:00 UTC
     </div>
 
     <div class="container">
@@ -339,7 +339,7 @@
             const redirectUri = window.location.origin + window.location.pathname;
 
             console.log('=== CONFIGURATION INFO ===');
-            console.log('Version: v3.4.8b-CLEAN-PARTICIPANTS - 2026-04-15 21:00 UTC');
+            console.log('Version: v3.4.9-STABLE-EXTRACTION - 2026-04-15 21:00 UTC');
             console.log('Current URL:', currentUrl);
             console.log('Redirect URI:', redirectUri);
             console.log('Client ID:', CLIENT_ID || 'NOT SET');
@@ -608,32 +608,19 @@
             }
 
             const parkedEmails = [];
-            // Clean participant role tracking
-            let parkedParticipantId = null;
-            let emailParticipantId = null;
-            let communicationId = null;
-            let parkedUserId = null;
             const uniqueQueues = new Set();
             const uniqueUsers = new Set();
             const conversationMap = new Map();
 
             conversations.forEach(conv => {
-                let lastParticipantId = null;
                 let lastWorkflowParticipantId = null;
                 let acdQueueId = null;
 
                 conv.participants?.forEach(participant => {
-                    // Track last participant ID
-                    if (participant.parkedParticipantId) {
-                        lastParticipantId = participant.parkedParticipantId;
+                    if (participant.purpose === 'workflow' && participant.participantId) {
+                        lastWorkflowParticipantId = participant.participantId;
                     }
 
-                    // Track last workflow participant ID
-                    if (participant.purpose === 'workflow' && participant.parkedParticipantId) {
-                        lastWorkflowParticipantId = participant.parkedParticipantId;
-                    }
-
-                    // Track ACD queue ID from participant with purpose 'acd'
                     if (participant.purpose === 'acd') {
                         participant.sessions?.forEach(session => {
                             session.segments?.forEach(segment => {
@@ -643,8 +630,31 @@
                             });
                         });
                     }
+                });
 
+                let parkedParticipantId = null;
+                let parkedUserId = null;
+                let emailParticipantId = null;
+                let communicationId = null;
+                let foundParkedSegment = null;
+                let foundEmailSession = null;
+                let foundAddressFrom = 'N/A';
+                let foundSubject = 'No Subject';
+                let foundQueueId = null;
+
+                conv.participants?.forEach(participant => {
                     participant.sessions?.forEach(session => {
+                        if (session.mediaType === 'email') {
+                            if (!emailParticipantId && participant.participantId) {
+                                emailParticipantId = participant.participantId;
+                                foundEmailSession = session;
+                                if (session.addressFrom) foundAddressFrom = session.addressFrom;
+                            }
+                            if (!communicationId && session.peerId) {
+                                communicationId = session.peerId;
+                            }
+                        }
+
                         session.segments?.forEach(segment => {
                             const isCurrentlyParked = (
                                 segment.segmentType === 'parked' &&
@@ -656,36 +666,63 @@
                             );
 
                             if (isCurrentlyParked) {
-                                const key = conv.conversationId;
-
-                                if (!conversationMap.has(key)) {
-                                    const segmentStartDate = new Date(segment.segmentStart);
-                                    const expirationDate = new Date(segmentStartDate.getTime() + (30 * 24 * 60 * 60 * 1000));
-
-                                    const emailData = {
-                                        conversationId: conv.conversationId,
-                                        parkedParticipantId: parkedParticipantId || 'N/A',
-                                        emailParticipantId: emailParticipantId || 'N/A',
-                                        communicationId: communicationId || 'N/A',
-                                        userId: parkedUserId || 'N/A',
-                                        queueId: segment.queueId,
-                                        acdQueueId: acdQueueId || segment.queueId,
-                                        segmentStart: segment.segmentStart,
-                                        expirationDate: expirationDate.toLocaleString(),
-                                        addressFrom: session.addressFrom || 'N/A',
-                                        subject: segment.subject || 'No Subject'
-                                    };
-
-                                    conversationMap.set(key, emailData);
-                                    parkedEmails.push(emailData);
-
-                                    uniqueQueues.add(segment.queueId);
-                                    if (participant.userId) uniqueUsers.add(participant.userId);
+                                parkedParticipantId = participant.participantId || parkedParticipantId;
+                                parkedUserId = participant.userId || parkedUserId || 'N/A';
+                                foundParkedSegment = segment;
+                                foundQueueId = segment.queueId || foundQueueId;
+                                if (segment.subject) foundSubject = segment.subject;
+                                if (session.addressFrom) foundAddressFrom = session.addressFrom;
+                                if (!emailParticipantId && participant.participantId) {
+                                    emailParticipantId = participant.participantId;
+                                    foundEmailSession = session;
+                                }
+                                if (!communicationId && session.peerId) {
+                                    communicationId = session.peerId;
                                 }
                             }
                         });
                     });
                 });
+
+                if (foundParkedSegment) {
+                    const key = conv.conversationId;
+
+                    if (!conversationMap.has(key)) {
+                        const segmentStartDate = new Date(foundParkedSegment.segmentStart);
+                        const expirationDate = new Date(segmentStartDate.getTime() + (30 * 24 * 60 * 60 * 1000));
+
+                        const emailData = {
+                            conversationId: conv.conversationId,
+                            parkedParticipantId: parkedParticipantId || 'N/A',
+                            emailParticipantId: emailParticipantId || parkedParticipantId || 'N/A',
+                            workflowParticipantId: lastWorkflowParticipantId || 'N/A',
+                            communicationId: communicationId || 'N/A',
+                            userId: parkedUserId || 'N/A',
+                            queueId: foundQueueId || 'N/A',
+                            acdQueueId: acdQueueId || foundQueueId || 'N/A',
+                            segmentStart: foundParkedSegment.segmentStart,
+                            expirationDate: expirationDate.toLocaleString(),
+                            addressFrom: foundAddressFrom || 'N/A',
+                            subject: foundSubject || 'No Subject'
+                        };
+
+                        console.log(`[Extraction] Conversation ${conv.conversationId}:`, {
+                            parkedParticipantId: emailData.parkedParticipantId,
+                            emailParticipantId: emailData.emailParticipantId,
+                            communicationId: emailData.communicationId,
+                            userId: emailData.userId,
+                            queueId: emailData.queueId,
+                            hasEmailSession: !!foundEmailSession,
+                            hasParkedSegment: !!foundParkedSegment
+                        });
+
+                        conversationMap.set(key, emailData);
+                        parkedEmails.push(emailData);
+
+                        if (emailData.queueId && emailData.queueId !== 'N/A') uniqueQueues.add(emailData.queueId);
+                        if (emailData.userId && emailData.userId !== 'N/A') uniqueUsers.add(emailData.userId);
+                    }
+                }
             });
 
             console.log(`Found ${parkedEmails.length} currently parked emails`);
@@ -724,7 +761,8 @@
                     <thead>
                         <tr>
                             <th>Conversation ID</th>
-                            <th>Participant ID</th>
+                            <th>Parked Participant ID</th>
+                            <th class="toggleable-id-column">Email Participant ID</th>
                             <th class="toggleable-id-column">User ID</th>
                             <th>User Name</th>
                             <th class="toggleable-id-column">Queue ID</th>
@@ -751,13 +789,17 @@
                             ${item.parkedParticipantId !== 'N/A' ? `<button class="copy-btn" onclick="copyToClipboard('${item.parkedParticipantId}')">📋</button>` : ''}
                         </td>
                         <td class="toggleable-id-column">
+                            <span style="font-family: monospace; font-size: 11px;">${item.emailParticipantId}</span>
+                            ${item.emailParticipantId !== 'N/A' ? `<button class="copy-btn" onclick="copyToClipboard('${item.emailParticipantId}')">📋</button>` : ''}
+                        </td>
+                        <td class="toggleable-id-column">
                             <span style="font-family: monospace; font-size: 11px;">${item.userId}</span>
                             ${item.userId !== 'N/A' ? `<button class="copy-btn" onclick="copyToClipboard('${item.userId}')">📋</button>` : ''}
                         </td>
                         <td>${item.userName}</td>
                         <td class="toggleable-id-column">
                             <span style="font-family: monospace; font-size: 11px;">${item.queueId}</span>
-                            <button class="copy-btn" onclick="copyToClipboard('${item.queueId}')">📋</button>
+                            ${item.queueId !== 'N/A' ? `<button class="copy-btn" onclick="copyToClipboard('${item.queueId}')">📋</button>` : ''}
                         </td>
                         <td>${item.queueName}</td>
                         <td>${item.addressFrom}</td>
@@ -765,7 +807,7 @@
                         <td style="white-space: nowrap;">${item.expirationDate}</td>
                         <td>
                             <button id="${buttonId}" class="redistribute-btn"
-                                onclick="redistributeEmail('${item.conversationId}', '${item.parkedParticipantId}', '${item.workflowParticipantId}', '${item.communicationId}', '${item.userId}', '${item.queueId}', '${item.acdQueueId}', document.getElementById('${buttonId}'))">
+                                onclick="redistributeEmail('${item.conversationId}', '${item.parkedParticipantId}', '${item.emailParticipantId}', '${item.workflowParticipantId}', '${item.communicationId}', '${item.userId}', '${item.queueId}', '${item.acdQueueId}', document.getElementById('${buttonId}'))">
                                 ↻ Redistribute
                             </button>
                         </td>
@@ -801,16 +843,38 @@
             toggleBtn.textContent = showIds ? '👁️ Hide IDs' : '👁️ Show IDs';
         }
 
-        async function redistributeEmail(conversationId, parkedParticipantId, emailParticipantId, communicationId, userId, queueId, acdQueueId, rowButton) {
+        async function redistributeEmail(conversationId, parkedParticipantId, emailParticipantId, workflowParticipantId, communicationId, userId, queueId, acdQueueId, rowButton) {
             if (!confirm('Are you sure you want to redistribute this email back to the queue? Queue routing will attempt to send to the original agent.')) {
                 return;
             }
 
             rowButton.disabled = true;
-            rowButton.textContent = '⏳ Updating...';
+            rowButton.textContent = '⏳ Validating...';
 
             try {
-                // Step 1: PUT conversation custom attributes
+                const missingFields = [];
+                if (!parkedParticipantId || parkedParticipantId === 'N/A') missingFields.push('parkedParticipantId');
+                if (!emailParticipantId || emailParticipantId === 'N/A') missingFields.push('emailParticipantId');
+                if (!communicationId || communicationId === 'N/A') missingFields.push('communicationId');
+                if (!queueId || queueId === 'N/A') missingFields.push('queueId');
+
+                console.log('[Manual] Resolved identifiers:', {
+                    conversationId,
+                    parkedParticipantId,
+                    emailParticipantId,
+                    workflowParticipantId,
+                    communicationId,
+                    userId,
+                    queueId,
+                    acdQueueId
+                });
+
+                if (missingFields.length > 0) {
+                    throw new Error(`Missing required identifiers: ${missingFields.join(', ')}`);
+                }
+
+                rowButton.textContent = '⏳ Updating...';
+
                 console.log(`Step 1: PUT custom attributes for conversation ${conversationId}`);
                 console.log(`Adding UserId: ${userId}, QueueId: ${queueId}, ForcedUnpark: true`);
 
@@ -821,7 +885,7 @@
                         'Authorization': `Bearer ${accessToken}`
                     },
                     body: JSON.stringify({
-                        id: conversationId, // Required field
+                        id: conversationId,
                         schemaId: CUSTOM_ATTRIBUTES_SCHEMA_ID,
                         divisions: [DIVISION_ID],
                         customAttributes: {
@@ -839,9 +903,236 @@
                 }
 
                 console.log('✓ Custom attributes updated successfully (UserId, QueueId, ForcedUnpark)');
-                
-                // Step 2: Automatically wrap up the original participant using communicationId
-                console.log(`Step 2: Wrapping up EMAIL participant ${parkedParticipantId}, communication ${communicationId}`);
+                rowButton.textContent = '⏳ Wrapping up...';
+
+                console.log(`Step 2: Wrapping up EMAIL participant ${emailParticipantId}, communication ${communicationId}`);
+
+                const wrapupResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${emailParticipantId}/communications/${communicationId}/wrapup`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${accessToken}`
+                    },
+                    body: JSON.stringify({
+                        code: "ca8f495d-e32d-4c6d-b721-2b061ca80213",
+                        name: "CD_AutoUnparked",
+                        notes: "Unparked due to time limit"
+                    })
+                });
+
+                if (!wrapupResponse.ok) {
+                    const wrapupError = await wrapupResponse.json().catch(() => ({}));
+                    console.warn('⚠ Wrapup failed (non-critical):', wrapupError.message || wrapupResponse.status);
+                } else {
+                    console.log('✓ Participant communication wrapped up automatically');
+                }
+
+                rowButton.textContent = '⏳ Transferring...';
+                console.log(`Step 3: Transferring parked participant ${parkedParticipantId} to ${REDISTRIBUTE_QUEUE_NAME} queue (${REDISTRIBUTE_QUEUE_ID})`);
+                console.log('In-queue flow will read UserId attribute and route to preferred agent');
+
+                const transferResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${parkedParticipantId}/replace`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${accessToken}`
+                    },
+                    body: JSON.stringify({
+                        queueId: REDISTRIBUTE_QUEUE_ID
+                    })
+                });
+
+                if (!transferResponse.ok) {
+                    const transferError = await transferResponse.json().catch(() => ({}));
+                    console.error('Transfer failed:', transferError);
+                    throw new Error(transferError.message || `Transfer failed: ${transferResponse.status}`);
+                }
+
+                console.log(`✓ Email transferred to ${REDISTRIBUTE_QUEUE_NAME} queue`);
+                showStatus(`✅ Email sent to ${REDISTRIBUTE_QUEUE_NAME}! Attributes: UserId, QueueId, ForcedUnpark=true. In-queue flow will handle routing.`, 'success');
+                rowButton.textContent = '✓ Redistributed';
+                rowButton.style.background = '#28a745';
+                setTimeout(() => queryConversations(), 3000);
+            } catch (error) {
+                console.error('Redistribution error:', error);
+                showStatus(`❌ Redistribution failed: ${error.message}`, 'error');
+                rowButton.disabled = false;
+                rowButton.textContent = '↻ Redistribute';
+            }
+        }
+
+        function updateAutoRedistributeHours(hours) {
+            AUTO_REDISTRIBUTE_HOURS = parseInt(hours) || 24;
+            console.log(`Auto-redistribute threshold updated to ${AUTO_REDISTRIBUTE_HOURS} hours`);
+        }
+
+        async function checkAndAutoRedistribute() {
+            console.log(`[Auto-Check] Running auto-redistribution check (threshold: ${AUTO_REDISTRIBUTE_HOURS} hours)`);
+
+            try {
+                const response = await queryConversationsData();
+                if (!response || response.conversations.length === 0) {
+                    console.log('[Auto-Check] No conversations found');
+                    return;
+                }
+
+                const conversations = response.conversations;
+                const now = new Date().getTime();
+                const hoursInMs = AUTO_REDISTRIBUTE_HOURS * 60 * 60 * 1000;
+                const expirationThresholdMs = 168 * 60 * 60 * 1000; // 7 days in ms
+
+                let redistributed = 0;
+
+                conversations.forEach(conv => {
+                    let parkedParticipantId = null;
+                    let parkedUserId = null;
+                    let emailParticipantId = null;
+                    let communicationId = null;
+                    let queueId = null;
+                    let parkedSegmentStart = null;
+
+                    conv.participants?.forEach(participant => {
+                        participant.sessions?.forEach(session => {
+                            if (session.mediaType === 'email') {
+                                if (!emailParticipantId && participant.participantId) {
+                                    emailParticipantId = participant.participantId;
+                                }
+                                if (!communicationId && session.peerId) {
+                                    communicationId = session.peerId;
+                                }
+                            }
+
+                            session.segments?.forEach(segment => {
+                                const isCurrentlyParked = (
+                                    segment.segmentType === 'parked' &&
+                                    segment.queueId &&
+                                    session.mediaType === 'email' &&
+                                    segment.segmentStart &&
+                                    !segment.segmentEnd &&
+                                    (!segment.disconnectType || segment.disconnectType === '')
+                                );
+
+                                if (isCurrentlyParked) {
+                                    parkedParticipantId = participant.participantId || parkedParticipantId;
+                                    parkedUserId = participant.userId || parkedUserId || 'N/A';
+                                    queueId = segment.queueId || queueId;
+                                    parkedSegmentStart = segment.segmentStart;
+                                    if (!emailParticipantId && participant.participantId) {
+                                        emailParticipantId = participant.participantId;
+                                    }
+                                    if (!communicationId && session.peerId) {
+                                        communicationId = session.peerId;
+                                    }
+                                }
+                            });
+                        });
+                    });
+
+                    if (!parkedSegmentStart) return;
+
+                    const segmentStart = new Date(parkedSegmentStart).getTime();
+                    const expiresAt = segmentStart + expirationThresholdMs;
+                    const timeUntilExpiration = expiresAt - now;
+                    const hoursRemaining = Math.floor(timeUntilExpiration / (60 * 60 * 1000));
+
+                    console.log(`[Auto-Check] Email ${conv.conversationId}:`);
+                    console.log(`  Parked at: ${parkedSegmentStart} (${new Date(parkedSegmentStart).toLocaleString()})`);
+                    console.log(`  Expires at: ${new Date(expiresAt).toLocaleString()}`);
+                    console.log(`  Hours remaining: ${hoursRemaining}`);
+                    console.log(`  Threshold: ${AUTO_REDISTRIBUTE_HOURS} hours`);
+                    console.log(`  Resolved parkedParticipantId: ${parkedParticipantId || 'N/A'}`);
+                    console.log(`  Resolved emailParticipantId: ${emailParticipantId || 'N/A'}`);
+                    console.log(`  Resolved communicationId: ${communicationId || 'N/A'}`);
+                    console.log(`  Resolved userId: ${parkedUserId || 'N/A'}`);
+                    console.log(`  Should redistribute: ${timeUntilExpiration <= hoursInMs && timeUntilExpiration > 0}`);
+
+                    if (timeUntilExpiration <= hoursInMs && timeUntilExpiration > 0) {
+                        const missingFields = [];
+                        if (!parkedParticipantId) missingFields.push('parkedParticipantId');
+                        if (!emailParticipantId) missingFields.push('emailParticipantId');
+                        if (!communicationId) missingFields.push('communicationId');
+                        if (!queueId) missingFields.push('queueId');
+
+                        if (missingFields.length > 0) {
+                            console.error(`[Auto] Skipping ${conv.conversationId} due to missing identifiers: ${missingFields.join(', ')}`);
+                            return;
+                        }
+
+                        console.log(`[Auto-Redistribute] Email ${conv.conversationId} expires in ${hoursRemaining} hours - triggering redistribution`);
+                        redistributed++;
+
+                        let workflowParticipantId = null;
+                        conv.participants?.forEach(p => {
+                            if (p.purpose === 'workflow' && p.participantId) workflowParticipantId = p.participantId;
+                        });
+
+                        redistributeEmailAuto(
+                            conv.conversationId,
+                            parkedParticipantId,
+                            emailParticipantId,
+                            workflowParticipantId,
+                            communicationId,
+                            parkedUserId,
+                            queueId
+                        ).catch(err => {
+                            console.error(`[Auto] Failed to redistribute ${conv.conversationId}:`, err);
+                        });
+                    }
+                });
+
+                if (redistributed > 0) {
+                    console.log(`[Auto-Check] Auto-redistributed ${redistributed} emails`);
+                    showStatus(`✅ Auto-redistributed ${redistributed} email(s) approaching expiration`, 'success');
+
+                    setTimeout(() => {
+                        console.log('[Auto-Check] Refreshing parked emails list...');
+                        queryConversations();
+                    }, 3000);
+                }
+            } catch (error) {
+                console.error('[Auto-Check] Error during auto-redistribution:', error);
+            }
+        }
+
+        async function redistributeEmailAuto(conversationId, parkedParticipantId, emailParticipantId, workflowParticipantId, communicationId, userId, queueId) {
+            try {
+                console.log(`[Auto] Starting redistribution for ${conversationId}`);
+                console.log('[Auto] Resolved identifiers:', {
+                    conversationId,
+                    parkedParticipantId,
+                    emailParticipantId,
+                    workflowParticipantId,
+                    communicationId,
+                    userId,
+                    queueId
+                });
+
+                const putResponse = await fetch(`${BASE_URL}/api/v2/conversations/${conversationId}/customattributes`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${accessToken}`
+                    },
+                    body: JSON.stringify({
+                        id: conversationId,
+                        schemaId: CUSTOM_ATTRIBUTES_SCHEMA_ID,
+                        divisions: [DIVISION_ID],
+                        customAttributes: {
+                            UserId: userId,
+                            QueueId: queueId,
+                            ForcedUnpark: true
+                        }
+                    })
+                });
+
+                if (!putResponse.ok) {
+                    const errorData = await putResponse.json().catch(() => ({}));
+                    console.error('[Auto] Failed to update custom attributes:', errorData);
+                    throw new Error(`Custom attributes failed: ${putResponse.status}`);
+                }
+
+                console.log('[Auto] ✓ Custom attributes updated');
+                console.log(`[Auto] Step 2: Wrapping up EMAIL participant ${emailParticipantId}, communication ${communicationId}`);
 
                 const wrapupResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${emailParticipantId}/communications/${communicationId}/wrapup`, {
                     method: 'POST',
@@ -857,18 +1148,13 @@
                 });
 
                 if (wrapupResponse.ok) {
-                    console.log('✓ Participant communication wrapped up automatically');
+                    console.log('[Auto] ✓ Participant communication wrapped up automatically');
                 } else {
                     const wrapupError = await wrapupResponse.json().catch(() => ({}));
-                    console.warn('⚠ Wrapup failed (non-critical):', wrapupError.message || wrapupResponse.status);
-                    // Don't fail the whole operation if wrapup fails
+                    console.warn('[Auto] ⚠ Wrapup failed (non-critical):', wrapupError.message || wrapupResponse.status);
                 }
 
-                rowButton.textContent = '⏳ Transferring...';
-
-                // Step 3: Transfer to CD_RedistributeEmails queue
-                console.log(`Step 3: Transferring to ${REDISTRIBUTE_QUEUE_NAME} queue (${REDISTRIBUTE_QUEUE_ID})`);
-                console.log('In-queue flow will read UserId attribute and route to preferred agent');
+                console.log(`[Auto] Step 3: Transferring parked participant ${parkedParticipantId} to queue`);
 
                 const transferResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${parkedParticipantId}/replace`, {
                     method: 'POST',
@@ -881,23 +1167,17 @@
                     })
                 });
 
-                if (transferResponse.ok) {
-                    console.log(`✓ Email transferred to ${REDISTRIBUTE_QUEUE_NAME} queue`);
-
-                    showStatus(`✅ Email sent to ${REDISTRIBUTE_QUEUE_NAME}! Attributes: UserId, QueueId, ForcedUnpark=true. In-queue flow will handle routing.`, 'success');
-                    rowButton.textContent = '✓ Redistributed';
-                    rowButton.style.background = '#28a745';
-                    setTimeout(() => queryConversations(), 3000);
-                } else {
-                    const transferError = await transferResponse.json().catch(() => ({}));
-                    console.error('Transfer failed:', transferError);
-                    throw new Error(transferError.message || `Transfer failed: ${transferResponse.status}`);
+                if (!transferResponse.ok) {
+                    const errorData = await transferResponse.json().catch(() => ({}));
+                    console.error('[Auto] Transfer failed:', errorData);
+                    throw new Error(`Transfer failed: ${transferResponse.status}`);
                 }
+
+                console.log(`[Auto] ✓ Redistribution complete for ${conversationId}`);
+                return true;
             } catch (error) {
-                console.error('Redistribution error:', error);
-                showStatus(`❌ Redistribution failed: ${error.message}`, 'error');
-                rowButton.disabled = false;
-                rowButton.textContent = '↻ Redistribute';
+                console.error(`[Auto] Redistribution error for ${conversationId}:`, error);
+                throw error;
             }
         }
 
@@ -954,7 +1234,7 @@
                                         redistributed++;
 
                                         // Use the participant who HAS the parked segment (not lastParticipantId)
-                                        const activeParticipantId = participant.parkedParticipantId;
+                                        const activeParticipantId = participant.participantId;
                                         const parkedByUserId = participant.userId || 'N/A';
                                         const communicationId = session.peerId || 'N/A'; // Extract peerId as communicationId
                                         const queueId = segment.queueId;
@@ -962,7 +1242,7 @@
                                         // Find workflow participant ID
                                         let workflowParticipantId = null;
                                         conv.participants?.forEach(p => {
-                                            if (p.purpose === 'workflow' && p.parkedParticipantId) workflowParticipantId = p.parkedParticipantId;
+                                            if (p.purpose === 'workflow' && p.participantId) workflowParticipantId = p.participantId;
                                         });
 
                                         console.log(`  Using active participant: ${activeParticipantId}, communication: ${communicationId}`);
@@ -993,10 +1273,10 @@
             }
         }
 
-        async function redistributeEmailAuto(conversationId, parkedParticipantId, workflowParticipantId, communicationId, userId, queueId) {
+        async function redistributeEmailAuto(conversationId, participantId, workflowParticipantId, communicationId, userId, queueId) {
             try {
                 console.log(`[Auto] Starting redistribution for ${conversationId}`);
-                console.log(`[Auto] UserId: ${userId}, QueueId: ${queueId}, ParticipantId: ${parkedParticipantId}, CommunicationId: ${communicationId}`);
+                console.log(`[Auto] UserId: ${userId}, QueueId: ${queueId}, ParticipantId: ${participantId}, CommunicationId: ${communicationId}`);
 
                 // Step 1: PUT custom attributes
                 const putResponse = await fetch(`${BASE_URL}/api/v2/conversations/${conversationId}/customattributes`, {
@@ -1026,9 +1306,9 @@
                 console.log('[Auto] ✓ Custom attributes updated');
 
                 // Step 2: Automatically wrap up the original participant using communicationId
-                console.log(`[Auto] Step 2: Wrapping up participant ${parkedParticipantId}, communication ${communicationId}`);
+                console.log(`[Auto] Step 2: Wrapping up participant ${participantId}, communication ${communicationId}`);
 
-                const wrapupResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${emailParticipantId}/communications/${communicationId}/wrapup`, {
+                const wrapupResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/communications/${communicationId}/wrapup`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1049,7 +1329,7 @@
                 }
 
                 // Step 3: Transfer to queue
-                const transferResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${parkedParticipantId}/replace`, {
+                const transferResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/replace`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
