@@ -247,7 +247,7 @@
 <body>
     <!-- Version Display - Bottom Left -->
     <div class="version-display">
-        <strong>Version:</strong> v3.4.6-LIVE-COMM-ID | <strong>Updated:</strong> 2026-04-15 21:00 UTC
+        <strong>Version:</strong> v3.4.7-PARTICIPANT-FIX | <strong>Updated:</strong> 2026-04-15 21:00 UTC
     </div>
 
     <div class="container">
@@ -339,7 +339,7 @@
             const redirectUri = window.location.origin + window.location.pathname;
 
             console.log('=== CONFIGURATION INFO ===');
-            console.log('Version: v3.4.6-LIVE-COMM-ID - 2026-04-15 21:00 UTC');
+            console.log('Version: v3.4.7-PARTICIPANT-FIX - 2026-04-15 21:00 UTC');
             console.log('Current URL:', currentUrl);
             console.log('Redirect URI:', redirectUri);
             console.log('Client ID:', CLIENT_ID || 'NOT SET');
@@ -660,6 +660,7 @@
                                     const emailData = {
                                         conversationId: conv.conversationId,
                                         participantId: participant.participantId || 'N/A',
+                                        emailParticipantId: participant.participantId || 'N/A',
                                         workflowParticipantId: lastWorkflowParticipantId || 'N/A',
                                         communicationId: session.peerId || 'N/A', // Extract peerId as communicationId
                                         userId: participant.userId || 'N/A',
@@ -760,7 +761,7 @@
                         <td style="white-space: nowrap;">${item.expirationDate}</td>
                         <td>
                             <button id="${buttonId}" class="redistribute-btn"
-                                onclick="redistributeEmail('${item.conversationId}', '${item.participantId}', '${item.workflowParticipantId}', '${item.communicationId}', '${item.userId}', '${item.queueId}', '${item.acdQueueId}', document.getElementById('${buttonId}'))">
+                                onclick="redistributeEmail('${item.conversationId}', '${item.participantId}', '${item.emailParticipantId}', '${item.workflowParticipantId}', '${item.communicationId}', '${item.userId}', '${item.queueId}', '${item.acdQueueId}', document.getElementById('${buttonId}'))">
                                 ↻ Redistribute
                             </button>
                         </td>
@@ -796,46 +797,7 @@
             toggleBtn.textContent = showIds ? '👁️ Hide IDs' : '👁️ Show IDs';
         }
 
-        
-        async function getLiveEmailCommunicationId(conversationId, participantId) {
-            const response = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}`, {
-                headers: { 'Authorization': `Bearer ${accessToken}` }
-            });
-
-            if (!response.ok) {
-                const err = await response.json().catch(() => ({}));
-                throw new Error(`Failed to fetch live email conversation: ${err.message || response.status}`);
-            }
-
-            const convo = await response.json();
-
-            const participant = (convo.participants || []).find(p =>
-                p.id === participantId || p.participantId === participantId
-            );
-
-            if (!participant) {
-                throw new Error(`Participant ${participantId} not found in live conversation`);
-            }
-
-            const candidates = [
-                ...(participant.messages || []),
-                ...(participant.communications || []),
-                ...(participant.sessions || [])
-            ];
-
-            const comm = candidates.find(c =>
-                c && c.id && !c.disconnectType && !c.endTime && !c.segmentEnd
-            ) || candidates.find(c => c && c.id);
-
-            if (!comm || !comm.id) {
-                console.error('Live participant payload:', participant);
-                throw new Error(`No communication/message id found for participant ${participantId}`);
-            }
-
-            return comm.id;
-        }
-
-        async function redistributeEmail(conversationId, participantId, workflowParticipantId, communicationId, userId, queueId, acdQueueId, rowButton) {
+        async function redistributeEmail(conversationId, parkedParticipantId, emailParticipantId, workflowParticipantId, communicationId, userId, queueId, acdQueueId, rowButton) {
             if (!confirm('Are you sure you want to redistribute this email back to the queue? Queue routing will attempt to send to the original agent.')) {
                 return;
             }
@@ -875,10 +837,9 @@
                 console.log('✓ Custom attributes updated successfully (UserId, QueueId, ForcedUnpark)');
                 
                 // Step 2: Automatically wrap up the original participant using communicationId
-                const communicationIdLive = await getLiveEmailCommunicationId(conversationId, participantId);
-                console.log(`Step 2: Wrapping up participant ${participantId}, communication ${communicationIdLive}`);
+                console.log(`Step 2: Wrapping up participant ${participantId}, communication ${communicationId}`);
 
-                const wrapupResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/communications/${communicationIdLive}/wrapup`, {
+                const wrapupResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${emailParticipantId}/communications/${communicationId}/wrapup`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -905,7 +866,7 @@
                 console.log(`Step 3: Transferring to ${REDISTRIBUTE_QUEUE_NAME} queue (${REDISTRIBUTE_QUEUE_ID})`);
                 console.log('In-queue flow will read UserId attribute and route to preferred agent');
 
-                const transferResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/replace`, {
+                const transferResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${parkedParticipantId}/replace`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1028,7 +989,7 @@
             }
         }
 
-        async function redistributeEmailAuto(conversationId, participantId, workflowParticipantId, communicationId, userId, queueId) {
+        async function redistributeEmailAuto(conversationId, parkedParticipantId, emailParticipantId, workflowParticipantId, communicationId, userId, queueId) {
             try {
                 console.log(`[Auto] Starting redistribution for ${conversationId}`);
                 console.log(`[Auto] UserId: ${userId}, QueueId: ${queueId}, ParticipantId: ${participantId}, CommunicationId: ${communicationId}`);
@@ -1063,7 +1024,7 @@
                 // Step 2: Automatically wrap up the original participant using communicationId
                 console.log(`[Auto] Step 2: Wrapping up participant ${participantId}, communication ${communicationId}`);
 
-                const wrapupResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/communications/${communicationIdLive}/wrapup`, {
+                const wrapupResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${emailParticipantId}/communications/${communicationId}/wrapup`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1084,7 +1045,7 @@
                 }
 
                 // Step 3: Transfer to queue
-                const transferResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/replace`, {
+                const transferResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${parkedParticipantId}/replace`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1101,7 +1062,7 @@
                     throw new Error(`Transfer failed: ${transferResponse.status}`);
                 }
 
-                console.log(`[Auto] ✓ Successfully transferred to queue`);
+                console.log(`[Auto] Step 3: Transferring to queue`);
                 console.log(`[Auto] ✓ Redistribution complete for ${conversationId}`);
                 return true;
             } catch (error) {
