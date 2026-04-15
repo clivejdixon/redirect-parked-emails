@@ -247,7 +247,7 @@
 <body>
     <!-- Version Display - Bottom Left -->
     <div class="version-display">
-        <strong>Version:</strong> v3.4.3-WRAPUP-FIXED | <strong>Updated:</strong> 2026-04-15 21:00 UTC
+        <strong>Version:</strong> v3.4.4-WRAPUP-FIXED | <strong>Updated:</strong> 2026-04-15 21:00 UTC
     </div>
 
     <div class="container">
@@ -339,7 +339,7 @@
             const redirectUri = window.location.origin + window.location.pathname;
             
             console.log('=== CONFIGURATION INFO ===');
-            console.log('Version: v3.4.3-WRAPUP-FIXED - 2026-04-15 21:00 UTC');
+            console.log('Version: v3.4.4-WRAPUP-FIXED - 2026-04-15 21:00 UTC');
             console.log('Current URL:', currentUrl);
             console.log('Redirect URI:', redirectUri);
             console.log('Client ID:', CLIENT_ID || 'NOT SET');
@@ -479,7 +479,7 @@
 
             try {
                 const queryPayload = {
-                    interval: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString() + '/' + new Date().toISOString(),
+                    interval: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString() + '/' + new Date().toISOString(),
                     order: 'desc',
                     orderBy: 'conversationStart',
                     paging: {
@@ -655,7 +655,7 @@
                                 
                                 if (!conversationMap.has(key)) {
                                     const segmentStartDate = new Date(segment.segmentStart);
-                                    const expirationDate = new Date(segmentStartDate.getTime() + (45 * 24 * 60 * 60 * 1000));
+                                    const expirationDate = new Date(segmentStartDate.getTime() + (30 * 24 * 60 * 60 * 1000));
                                     
                                     const emailData = {
                                         conversationId: conv.conversationId,
@@ -1073,7 +1073,7 @@
         async function queryConversationsData() {
             try {
                 const interval = {
-                    intervalStart: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString(),
+                    intervalStart: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
                     intervalEnd: new Date().toISOString()
                 };
 
