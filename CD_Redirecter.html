@@ -247,7 +247,7 @@
 <body>
     <!-- Version Display - Bottom Left -->
     <div class="version-display">
-        <strong>Version:</strong> v3.4.7-PARTICIPANT-FIX | <strong>Updated:</strong> 2026-04-15 21:00 UTC
+        <strong>Version:</strong> v3.4.8-CLEAN-PARTICIPANTS | <strong>Updated:</strong> 2026-04-15 21:00 UTC
     </div>
 
     <div class="container">
@@ -339,7 +339,7 @@
             const redirectUri = window.location.origin + window.location.pathname;
 
             console.log('=== CONFIGURATION INFO ===');
-            console.log('Version: v3.4.7-PARTICIPANT-FIX - 2026-04-15 21:00 UTC');
+            console.log('Version: v3.4.8-CLEAN-PARTICIPANTS - 2026-04-15 21:00 UTC');
             console.log('Current URL:', currentUrl);
             console.log('Redirect URI:', redirectUri);
             console.log('Client ID:', CLIENT_ID || 'NOT SET');
@@ -608,6 +608,11 @@
             }
 
             const parkedEmails = [];
+            // Clean participant role tracking
+            let parkedParticipantId = null;
+            let emailParticipantId = null;
+            let communicationId = null;
+            let parkedUserId = null;
             const uniqueQueues = new Set();
             const uniqueUsers = new Set();
             const conversationMap = new Map();
@@ -619,13 +624,13 @@
 
                 conv.participants?.forEach(participant => {
                     // Track last participant ID
-                    if (participant.participantId) {
-                        lastParticipantId = participant.participantId;
+                    if (participant.parkedParticipantId) {
+                        lastParticipantId = participant.parkedParticipantId;
                     }
 
                     // Track last workflow participant ID
-                    if (participant.purpose === 'workflow' && participant.participantId) {
-                        lastWorkflowParticipantId = participant.participantId;
+                    if (participant.purpose === 'workflow' && participant.parkedParticipantId) {
+                        lastWorkflowParticipantId = participant.parkedParticipantId;
                     }
 
                     // Track ACD queue ID from participant with purpose 'acd'
@@ -659,13 +664,12 @@
 
                                     const emailData = {
                                         conversationId: conv.conversationId,
-                                        participantId: participant.participantId || 'N/A',
-                                        emailParticipantId: participant.participantId || 'N/A',
-                                        workflowParticipantId: lastWorkflowParticipantId || 'N/A',
-                                        communicationId: session.peerId || 'N/A', // Extract peerId as communicationId
-                                        userId: participant.userId || 'N/A',
+                                        parkedParticipantId: parkedParticipantId || 'N/A',
+                                        emailParticipantId: emailParticipantId || 'N/A',
+                                        communicationId: communicationId || 'N/A',
+                                        userId: parkedUserId || 'N/A',
                                         queueId: segment.queueId,
-                                        acdQueueId: acdQueueId || segment.queueId, // Use ACD queue if found, otherwise current queue
+                                        acdQueueId: acdQueueId || segment.queueId,
                                         segmentStart: segment.segmentStart,
                                         expirationDate: expirationDate.toLocaleString(),
                                         addressFrom: session.addressFrom || 'N/A',
@@ -743,8 +747,8 @@
                             <button class="copy-btn" onclick="copyToClipboard('${item.conversationId}')">📋</button>
                         </td>
                         <td>
-                            <span style="font-family: monospace; font-size: 11px;">${item.participantId}</span>
-                            ${item.participantId !== 'N/A' ? `<button class="copy-btn" onclick="copyToClipboard('${item.participantId}')">📋</button>` : ''}
+                            <span style="font-family: monospace; font-size: 11px;">${item.parkedParticipantId}</span>
+                            ${item.parkedParticipantId !== 'N/A' ? `<button class="copy-btn" onclick="copyToClipboard('${item.parkedParticipantId}')">📋</button>` : ''}
                         </td>
                         <td class="toggleable-id-column">
                             <span style="font-family: monospace; font-size: 11px;">${item.userId}</span>
@@ -761,7 +765,7 @@
                         <td style="white-space: nowrap;">${item.expirationDate}</td>
                         <td>
                             <button id="${buttonId}" class="redistribute-btn"
-                                onclick="redistributeEmail('${item.conversationId}', '${item.participantId}', '${item.emailParticipantId}', '${item.workflowParticipantId}', '${item.communicationId}', '${item.userId}', '${item.queueId}', '${item.acdQueueId}', document.getElementById('${buttonId}'))">
+                                onclick="redistributeEmail('${item.conversationId}', '${item.parkedParticipantId}', '${item.workflowParticipantId}', '${item.communicationId}', '${item.userId}', '${item.queueId}', '${item.acdQueueId}', document.getElementById('${buttonId}'))">
                                 ↻ Redistribute
                             </button>
                         </td>
@@ -797,7 +801,7 @@
             toggleBtn.textContent = showIds ? '👁️ Hide IDs' : '👁️ Show IDs';
         }
 
-        async function redistributeEmail(conversationId, parkedParticipantId, emailParticipantId, workflowParticipantId, communicationId, userId, queueId, acdQueueId, rowButton) {
+        async function redistributeEmail(conversationId, parkedParticipantId, emailParticipantId, communicationId, userId, queueId, acdQueueId, rowButton) {
             if (!confirm('Are you sure you want to redistribute this email back to the queue? Queue routing will attempt to send to the original agent.')) {
                 return;
             }
@@ -837,7 +841,7 @@
                 console.log('✓ Custom attributes updated successfully (UserId, QueueId, ForcedUnpark)');
                 
                 // Step 2: Automatically wrap up the original participant using communicationId
-                console.log(`Step 2: Wrapping up participant ${participantId}, communication ${communicationId}`);
+                console.log(`Step 2: Wrapping up EMAIL participant ${parkedParticipantId}, communication ${communicationId}`);
 
                 const wrapupResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${emailParticipantId}/communications/${communicationId}/wrapup`, {
                     method: 'POST',
@@ -950,7 +954,7 @@
                                         redistributed++;
 
                                         // Use the participant who HAS the parked segment (not lastParticipantId)
-                                        const activeParticipantId = participant.participantId;
+                                        const activeParticipantId = participant.parkedParticipantId;
                                         const parkedByUserId = participant.userId || 'N/A';
                                         const communicationId = session.peerId || 'N/A'; // Extract peerId as communicationId
                                         const queueId = segment.queueId;
@@ -958,7 +962,7 @@
                                         // Find workflow participant ID
                                         let workflowParticipantId = null;
                                         conv.participants?.forEach(p => {
-                                            if (p.purpose === 'workflow' && p.participantId) workflowParticipantId = p.participantId;
+                                            if (p.purpose === 'workflow' && p.parkedParticipantId) workflowParticipantId = p.parkedParticipantId;
                                         });
 
                                         console.log(`  Using active participant: ${activeParticipantId}, communication: ${communicationId}`);
@@ -989,10 +993,10 @@
             }
         }
 
-        async function redistributeEmailAuto(conversationId, parkedParticipantId, emailParticipantId, workflowParticipantId, communicationId, userId, queueId) {
+        async function redistributeEmailAuto(conversationId, parkedParticipantId, workflowParticipantId, communicationId, userId, queueId) {
             try {
                 console.log(`[Auto] Starting redistribution for ${conversationId}`);
-                console.log(`[Auto] UserId: ${userId}, QueueId: ${queueId}, ParticipantId: ${participantId}, CommunicationId: ${communicationId}`);
+                console.log(`[Auto] UserId: ${userId}, QueueId: ${queueId}, ParticipantId: ${parkedParticipantId}, CommunicationId: ${communicationId}`);
 
                 // Step 1: PUT custom attributes
                 const putResponse = await fetch(`${BASE_URL}/api/v2/conversations/${conversationId}/customattributes`, {
@@ -1022,7 +1026,7 @@
                 console.log('[Auto] ✓ Custom attributes updated');
 
                 // Step 2: Automatically wrap up the original participant using communicationId
-                console.log(`[Auto] Step 2: Wrapping up participant ${participantId}, communication ${communicationId}`);
+                console.log(`[Auto] Step 2: Wrapping up participant ${parkedParticipantId}, communication ${communicationId}`);
 
                 const wrapupResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${emailParticipantId}/communications/${communicationId}/wrapup`, {
                     method: 'POST',
@@ -1062,7 +1066,7 @@
                     throw new Error(`Transfer failed: ${transferResponse.status}`);
                 }
 
-                console.log(`[Auto] Step 3: Transferring to queue`);
+                console.log(`[Auto] ✓ Successfully transferred to queue`);
                 console.log(`[Auto] ✓ Redistribution complete for ${conversationId}`);
                 return true;
             } catch (error) {
