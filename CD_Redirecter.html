@@ -247,7 +247,7 @@
 <body>
     <!-- Version Display - Bottom Left -->
     <div class="version-display">
-        <strong>Version:</strong> v3.4.5-WRAPUP-BEFORE-REPLACE | <strong>Updated:</strong> 2026-04-15 21:00 UTC
+        <strong>Version:</strong> v3.4.6-LIVE-COMM-ID | <strong>Updated:</strong> 2026-04-15 21:00 UTC
     </div>
 
     <div class="container">
@@ -339,7 +339,7 @@
             const redirectUri = window.location.origin + window.location.pathname;
 
             console.log('=== CONFIGURATION INFO ===');
-            console.log('Version: v3.4.5-WRAPUP-BEFORE-REPLACE - 2026-04-15 21:00 UTC');
+            console.log('Version: v3.4.6-LIVE-COMM-ID - 2026-04-15 21:00 UTC');
             console.log('Current URL:', currentUrl);
             console.log('Redirect URI:', redirectUri);
             console.log('Client ID:', CLIENT_ID || 'NOT SET');
@@ -796,6 +796,45 @@
             toggleBtn.textContent = showIds ? '👁️ Hide IDs' : '👁️ Show IDs';
         }
 
+        
+        async function getLiveEmailCommunicationId(conversationId, participantId) {
+            const response = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}`, {
+                headers: { 'Authorization': `Bearer ${accessToken}` }
+            });
+
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(`Failed to fetch live email conversation: ${err.message || response.status}`);
+            }
+
+            const convo = await response.json();
+
+            const participant = (convo.participants || []).find(p =>
+                p.id === participantId || p.participantId === participantId
+            );
+
+            if (!participant) {
+                throw new Error(`Participant ${participantId} not found in live conversation`);
+            }
+
+            const candidates = [
+                ...(participant.messages || []),
+                ...(participant.communications || []),
+                ...(participant.sessions || [])
+            ];
+
+            const comm = candidates.find(c =>
+                c && c.id && !c.disconnectType && !c.endTime && !c.segmentEnd
+            ) || candidates.find(c => c && c.id);
+
+            if (!comm || !comm.id) {
+                console.error('Live participant payload:', participant);
+                throw new Error(`No communication/message id found for participant ${participantId}`);
+            }
+
+            return comm.id;
+        }
+
         async function redistributeEmail(conversationId, participantId, workflowParticipantId, communicationId, userId, queueId, acdQueueId, rowButton) {
             if (!confirm('Are you sure you want to redistribute this email back to the queue? Queue routing will attempt to send to the original agent.')) {
                 return;
@@ -836,9 +875,10 @@
                 console.log('✓ Custom attributes updated successfully (UserId, QueueId, ForcedUnpark)');
                 
                 // Step 2: Automatically wrap up the original participant using communicationId
-                console.log(`Step 2: Wrapping up participant ${participantId}, communication ${communicationId}`);
+                const communicationIdLive = await getLiveEmailCommunicationId(conversationId, participantId);
+                console.log(`Step 2: Wrapping up participant ${participantId}, communication ${communicationIdLive}`);
 
-                const wrapupResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/communications/${communicationId}/wrapup`, {
+                const wrapupResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/communications/${communicationIdLive}/wrapup`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1023,7 +1063,7 @@
                 // Step 2: Automatically wrap up the original participant using communicationId
                 console.log(`[Auto] Step 2: Wrapping up participant ${participantId}, communication ${communicationId}`);
 
-                const wrapupResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/communications/${communicationId}/wrapup`, {
+                const wrapupResponse = await fetch(`${BASE_URL}/api/v2/conversations/emails/${conversationId}/participants/${participantId}/communications/${communicationIdLive}/wrapup`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
